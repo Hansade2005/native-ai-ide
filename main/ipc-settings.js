@@ -1,9 +1,7 @@
 // PiPilot IDE — Settings + shell IPC handlers (Phase 6)
 
-const fs = require('fs');
 const fsp = require('fs').promises;
 const path = require('path');
-const { shell } = require('electron');
 
 const DEFAULTS = {
   theme: 'midnight',
@@ -72,19 +70,4 @@ module.exports = function register(ipcMain, ctx) {
     } catch (err) { return fail(err); }
   });
 
-  ipcMain.handle('shell:open-external', async (_e, url) => {
-    try {
-      if (!url) throw new Error('url required');
-      await shell.openExternal(url);
-      return ok();
-    } catch (err) { return fail(err); }
-  });
-
-  ipcMain.handle('shell:show-in-folder', async (_e, p) => {
-    try {
-      if (!p) throw new Error('path required');
-      shell.showItemInFolder(p);
-      return ok();
-    } catch (err) { return fail(err); }
-  });
 };
