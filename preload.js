@@ -127,6 +127,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     stash: (p, opts) => ipcRenderer.invoke('git:stash', { projectPath: p, opts }),
     discard: (p, file) => ipcRenderer.invoke('git:discard', { projectPath: p, file }),
     init: (p) => ipcRenderer.invoke('git:init', p),
+    show: (p, hash) => ipcRenderer.invoke('git:show', { projectPath: p, hash }),
+    fileVersions: (p, file, staged) => ipcRenderer.invoke('git:file-versions', { projectPath: p, file, staged }),
   },
 
   // ---------- Cloud connectors ----------
@@ -173,6 +175,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     fim: (payload) => ipcRenderer.invoke('codestral:fim', payload),
     cancel: (requestId) => ipcRenderer.invoke('codestral:cancel', requestId),
     chat: (payload) => ipcRenderer.invoke('codestral:chat', payload),
+    commitMessage: (payload) => ipcRenderer.invoke('codestral:commit-message', payload),
     chatStream: (payload, onEvent) => {
       const streamId = `codestral-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const ch = `codestral:chat:${streamId}`;

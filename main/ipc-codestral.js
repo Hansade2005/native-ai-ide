@@ -206,6 +206,45 @@ module.exports = function register(ipcMain, ctx) {
     }
   });
 
+  // Generate a conventional-commit message from a diff. Trims output so the
+  // first line stays under 72 chars; full body is preserved after a blank line.
+  ipcMain.handle('codestral:commit-message', async (_e, payload) => {
+    const { diff, scope } = payload || {};
+    if (!apiKey()) return { ok: false, error: 'CODESTRAL_API_KEY not set' };
+    if (!diff || typeof diff !== 'string') return { ok: false, error: 'diff required' };
+    const truncated = diff.length > 16000 ? diff.slice(0, 16000) + '\n... (truncated)' : diff;
+    const sys = [
+      'You write Conventional Commits messages.',
+      'Format: <type>(<scope>): <subject>',
+      'Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert.',
+      'Subject: imperative, no trailing period, ≤72 chars.',
+      'After subject, optional blank line then a body that lists bullet points (each ≤100 chars) describing the change.',
+      'Output ONLY the commit message — no quoting, no fences, no preface.',
+    ].join('\n');
+    const user = [
+      scope ? `Suggested scope (use only if appropriate): ${scope}` : '',
+      'Diff:',
+      '```diff',
+      truncated,
+      '```',
+    ].filter(Boolean).join('\n');
+
+    try {
+      const data = await postJson(host(), '/v1/chat/completions', apiKey(), {
+        model: model(),
+        messages: [{ role: 'system', content: sys }, { role: 'user', content: user }],
+        temperature: 0.2,
+        max_tokens: 400,
+      }, {});
+      let text = (data?.choices?.[0]?.message?.content || '').trim();
+      // Strip any code fences if model added them
+      text = text.replace(/^```[a-zA-Z]*\n?/, '').replace(/\n?```$/, '').trim();
+      return { ok: true, text, usage: data?.usage || null };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('codestral:status', () => ({
     ok: true,
     configured: !!apiKey(),

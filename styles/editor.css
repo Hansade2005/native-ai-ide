@@ -7,6 +7,14 @@
   position: absolute;
   inset: 0;
 }
+.virtual-host {
+  position: absolute;
+  inset: 0;
+  background: var(--bg);
+  overflow: auto;
+  z-index: 5;
+}
+.virtual-host.hidden { display: none; }
 
 .editor-container {
   position: relative;

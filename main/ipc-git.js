@@ -272,4 +272,60 @@ module.exports = function register(ipcMain, ctx) {
       return ok();
     } catch (err) { return fail(err); }
   });
+
+  // Show — full info for one commit: message, parent, files changed, full diff
+  ipcMain.handle('git:show', async (_e, payload) => {
+    try {
+      const { projectPath, hash } = payload || {};
+      if (!projectPath || !hash) throw new Error('projectPath and hash required');
+      const repo = g(projectPath);
+      const stat = await repo.show(['--stat', '--format=fuller', hash]);
+      const diff = await repo.show(['--patch', '--format=', hash]);
+      // Pull commit metadata via show with a delimited format we can parse
+      const meta = await repo.show([
+        '--no-patch',
+        '--format=%H%n%h%n%an%n%ae%n%ad%n%cn%n%ce%n%cd%n%P%n%s%n%b',
+        hash,
+      ]);
+      const lines = (meta || '').split('\n');
+      const commit = {
+        hash: lines[0] || hash,
+        abbreviatedHash: lines[1] || hash.slice(0, 7),
+        author: lines[2] || '',
+        email: lines[3] || '',
+        date: lines[4] || '',
+        committer: lines[5] || '',
+        committerEmail: lines[6] || '',
+        commitDate: lines[7] || '',
+        parents: (lines[8] || '').split(/\s+/).filter(Boolean),
+        subject: lines[9] || '',
+        body: lines.slice(10).join('\n'),
+      };
+      return ok({ commit, stat, diff });
+    } catch (err) { return fail(err); }
+  });
+
+  // Diff a single file vs HEAD (or vs index when staged=true). Returns the
+  // raw "old" and "new" file contents so the renderer can show them in a
+  // Monaco diff editor instead of a unified-text patch.
+  ipcMain.handle('git:file-versions', async (_e, payload) => {
+    try {
+      const { projectPath, file, staged } = payload || {};
+      if (!projectPath || !file) throw new Error('projectPath and file required');
+      const repo = g(projectPath);
+      const fsp = require('fs').promises;
+      const path = require('path');
+      let original = '';
+      let modified = '';
+      try {
+        original = await repo.show([`HEAD:${file}`]);
+      } catch { original = ''; }
+      if (staged) {
+        try { modified = await repo.show([`:${file}`]); } catch { modified = ''; }
+      } else {
+        try { modified = await fsp.readFile(path.join(projectPath, file), 'utf8'); } catch { modified = ''; }
+      }
+      return ok({ original, modified });
+    } catch (err) { return fail(err); }
+  });
 };

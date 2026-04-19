@@ -6,6 +6,7 @@
   const state = window.PiPilot.state;
 
   const hostEl = document.getElementById('monaco-host');
+  const virtualHostEl = document.getElementById('virtual-host');
   const emptyEl = document.getElementById('editor-empty');
   const tabBarEl = document.getElementById('tab-bar');
   const breadcrumbEl = document.getElementById('breadcrumb');
@@ -15,10 +16,11 @@
   let editor = null;
   let monacoLoading = null;
 
-  // path -> { model, viewState, dirty, originalContent, name }
+  // path -> { model, viewState, dirty, originalContent, name }   (file tabs)
+  // virtualId -> { virtual: true, name, icon, mount, unmount, container, dirty: false }   (virtual tabs)
   const openDocs = new Map();
   let activePath = null;
-  let tabOrder = []; // paths in display order
+  let tabOrder = []; // paths/ids in display order
 
   // ---------- Utilities ----------
   function basename(p) {
@@ -353,10 +355,10 @@
   }
 
   function switchTo(filePath, opts = {}) {
-    ensureEditor();
-    // Save view state of previous
+    // Save view state of previous file (skip for virtual tabs)
     if (activePath && openDocs.has(activePath) && editor) {
-      openDocs.get(activePath).viewState = editor.saveViewState();
+      const prev = openDocs.get(activePath);
+      if (!prev.virtual) prev.viewState = editor.saveViewState();
     }
 
     const doc = openDocs.get(filePath);
@@ -365,39 +367,70 @@
     activePath = filePath;
     state.activeFile = filePath;
 
-    if (editor) {
-      editor.setModel(doc.model);
-      if (doc.viewState) editor.restoreViewState(doc.viewState);
-      if (opts.line) {
-        const col = opts.col || 1;
-        editor.revealLineInCenter(opts.line);
-        editor.setPosition({ lineNumber: opts.line, column: col });
+    if (doc.virtual) {
+      // Hide Monaco host, show virtual content
+      hostEl.classList.add('hidden');
+      virtualHostEl.classList.remove('hidden');
+      // Mount on first activation; reuse the container otherwise
+      if (!doc.mounted) {
+        const container = document.createElement('div');
+        container.className = 'virtual-tab-content';
+        container.style.cssText = 'width:100%;height:100%;overflow:auto;';
+        doc.container = container;
+        virtualHostEl.innerHTML = '';
+        virtualHostEl.appendChild(container);
+        try { doc.unmount = doc.mount(container) || (() => {}); } catch (e) { console.error('virtual mount', e); }
+        doc.mounted = true;
+      } else {
+        virtualHostEl.innerHTML = '';
+        virtualHostEl.appendChild(doc.container);
       }
-      editor.focus();
+      bus.emit('editor:active-changed', { path: filePath, virtual: true });
+      bus.emit('editor:language', { language: '' });
+    } else {
+      ensureEditor();
+      // Show Monaco, hide virtual
+      virtualHostEl.classList.add('hidden');
+      hostEl.classList.remove('hidden');
+      if (editor) {
+        editor.setModel(doc.model);
+        if (doc.viewState) editor.restoreViewState(doc.viewState);
+        if (opts.line) {
+          const col = opts.col || 1;
+          editor.revealLineInCenter(opts.line);
+          editor.setPosition({ lineNumber: opts.line, column: col });
+        }
+        editor.focus();
+      }
+      bus.emit('editor:active-changed', { path: filePath });
+      bus.emit('editor:language', { language: doc.model.getLanguageId() });
     }
 
     renderTabs();
     updateBreadcrumb();
     updateEmptyState();
 
-    bus.emit('editor:active-changed', { path: filePath });
-    bus.emit('editor:language', { language: doc.model.getLanguageId() });
-
-    // Update openFiles in shared state
     state.openFiles = tabOrder.map((p) => {
       const d = openDocs.get(p);
-      return { path: p, name: d.name, dirty: d.dirty };
+      return { path: p, name: d.name, dirty: d.dirty, virtual: !!d.virtual };
     });
   }
 
   async function closeFile(filePath) {
     const doc = openDocs.get(filePath);
     if (!doc) return;
-    if (doc.dirty) {
+    if (doc.dirty && !doc.virtual) {
       const ok = window.confirm(`"${doc.name}" has unsaved changes. Close without saving?`);
       if (!ok) return;
     }
-    try { doc.model.dispose(); } catch {}
+    if (doc.virtual) {
+      try { doc.unmount?.(); } catch {}
+      if (doc.container && doc.container.parentNode === virtualHostEl) {
+        virtualHostEl.removeChild(doc.container);
+      }
+    } else {
+      try { doc.model.dispose(); } catch {}
+    }
     openDocs.delete(filePath);
     tabOrder = tabOrder.filter((p) => p !== filePath);
 
@@ -408,6 +441,9 @@
         switchTo(tabOrder[tabOrder.length - 1]);
       } else {
         if (editor) editor.setModel(null);
+        virtualHostEl.classList.add('hidden');
+        virtualHostEl.innerHTML = '';
+        hostEl.classList.remove('hidden');
         renderTabs();
         updateBreadcrumb();
         updateEmptyState();
@@ -530,6 +566,88 @@
   renderTabs();
   updateBreadcrumb();
 
+  // ---------- Virtual tab API (Settings, Diff, Commit details, etc.) ----------
+  function openVirtualTab({ id, name, icon, mount }) {
+    if (!id || typeof mount !== 'function') return;
+    if (openDocs.has(id)) {
+      switchTo(id);
+      return;
+    }
+    openDocs.set(id, {
+      virtual: true,
+      name: name || id,
+      icon,
+      mount,
+      mounted: false,
+      dirty: false,
+    });
+    tabOrder.push(id);
+    switchTo(id);
+  }
+
+  async function openDiffTab({ id, name, original, modified, language, originalTitle, modifiedTitle }) {
+    await loadMonaco();
+    const tabId = id || `pipilot://diff/${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+    if (openDocs.has(tabId)) { switchTo(tabId); return; }
+
+    let diffEditor = null;
+    let originalModel = null;
+    let modifiedModel = null;
+
+    openVirtualTab({
+      id: tabId,
+      name: name || 'Diff',
+      mount: (container) => {
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;';
+        if (originalTitle || modifiedTitle) {
+          const header = document.createElement('div');
+          header.style.cssText = 'display:flex;font-size:11px;color:var(--text-mid);padding:4px 12px;border-bottom:1px solid var(--border);background:var(--surface);';
+          const left = document.createElement('div');
+          left.style.flex = '1';
+          left.textContent = originalTitle || 'Original';
+          const right = document.createElement('div');
+          right.style.flex = '1';
+          right.style.borderLeft = '1px solid var(--border)';
+          right.style.paddingLeft = '12px';
+          right.textContent = modifiedTitle || 'Modified';
+          header.appendChild(left);
+          header.appendChild(right);
+          wrap.appendChild(header);
+        }
+        const diffHost = document.createElement('div');
+        diffHost.style.cssText = 'flex:1;min-height:0;';
+        wrap.appendChild(diffHost);
+        container.appendChild(wrap);
+
+        // Defer Monaco creation to allow layout
+        setTimeout(() => {
+          try {
+            originalModel = monaco.editor.createModel(original || '', language || 'plaintext');
+            modifiedModel = monaco.editor.createModel(modified || '', language || 'plaintext');
+            diffEditor = monaco.editor.createDiffEditor(diffHost, {
+              automaticLayout: true,
+              theme: 'midnight',
+              readOnly: true,
+              renderSideBySide: true,
+              minimap: { enabled: false },
+              scrollBeyondLastLine: false,
+              fontSize: 13,
+              fontFamily: 'Geist Mono, monospace',
+            });
+            diffEditor.setModel({ original: originalModel, modified: modifiedModel });
+          } catch (e) { console.error('diff editor', e); }
+        }, 30);
+
+        return () => {
+          try { diffEditor?.dispose(); } catch {}
+          try { originalModel?.dispose(); } catch {}
+          try { modifiedModel?.dispose(); } catch {}
+        };
+      },
+    });
+  }
+
   // Public API
   window.PiPilot.editor = {
     openFile,
@@ -540,5 +658,8 @@
     getDirtyFiles,
     getMonaco: () => monaco,
     getEditor: () => editor,
+    openVirtualTab,
+    openDiffTab,
+    isVirtualTab: (id) => !!openDocs.get(id)?.virtual,
   };
 })();
