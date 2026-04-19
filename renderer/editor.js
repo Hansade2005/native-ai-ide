@@ -315,8 +315,28 @@
   }
 
   // ---------- Core operations ----------
+  function isAbsolutePath(p) {
+    if (!p) return false;
+    return /^(?:[a-zA-Z]:[\\/]|[\\/]|[a-z][a-z0-9+.-]*:\/\/)/.test(p);
+  }
+
+  function toAbsolutePath(p) {
+    if (!p) return p;
+    if (isAbsolutePath(p)) return p;
+    // Strip leading @-mention marker and ./ prefix the chat / other UIs may add
+    const clean = String(p).replace(/^@/, '').replace(/^\.\//, '');
+    const root = state.projectPath;
+    if (!root) return p;
+    const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/';
+    return root.replace(/[\\/]+$/, '') + sep + clean.replace(/^[\\/]+/, '');
+  }
+
   async function openFile(filePath, opts = {}) {
     if (!filePath) return;
+    // Callers sometimes hand us project-relative paths (git rows, chat @-mentions,
+    // search hits). Resolve against the current project root so IPC never sees
+    // a relative path — the main-side safeAbsolute() check would otherwise throw.
+    filePath = toAbsolutePath(filePath);
     await loadMonaco();
 
     if (!openDocs.has(filePath)) {
