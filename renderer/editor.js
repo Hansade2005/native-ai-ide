@@ -64,6 +64,7 @@
         window.require(['vs/editor/editor.main'], () => {
           monaco = window.monaco;
           defineTheme();
+          try { window.PiPilot?.bus?.emit('monaco:ready', monaco); } catch {}
           resolve(monaco);
         }, reject);
       };

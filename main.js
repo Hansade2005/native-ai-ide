@@ -16,6 +16,7 @@ const registerCloudHandlers = require('./main/ipc-cloud');
 const registerCheckpointHandlers = require('./main/ipc-checkpoints');
 const registerDevServerHandlers = require('./main/ipc-devserver');
 const registerSettingsHandlers = require('./main/ipc-settings');
+const registerCodestralHandlers = require('./main/ipc-codestral');
 
 let mainWindow = null;
 
@@ -187,6 +188,7 @@ app.whenReady().then(() => {
   registerCheckpointHandlers(ipcMain, ctx);
   registerDevServerHandlers(ipcMain, ctx);
   registerSettingsHandlers(ipcMain, ctx);
+  registerCodestralHandlers(ipcMain, ctx);
 
   createWindow();
 

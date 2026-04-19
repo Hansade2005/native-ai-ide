@@ -167,6 +167,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
 
+  // ---------- Codestral (FIM completions + inline chat) ----------
+  codestral: {
+    status: () => ipcRenderer.invoke('codestral:status'),
+    fim: (payload) => ipcRenderer.invoke('codestral:fim', payload),
+    cancel: (requestId) => ipcRenderer.invoke('codestral:cancel', requestId),
+    chat: (payload) => ipcRenderer.invoke('codestral:chat', payload),
+    chatStream: (payload, onEvent) => {
+      const streamId = `codestral-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const ch = `codestral:chat:${streamId}`;
+      const fn = (_e, evt) => onEvent(evt);
+      ipcRenderer.on(ch, fn);
+      const done = ipcRenderer.invoke('codestral:chat-stream', { streamId, ...payload });
+      return {
+        streamId,
+        done,
+        stop: () => ipcRenderer.invoke('codestral:cancel', streamId),
+        dispose: () => ipcRenderer.removeListener(ch, fn),
+      };
+    },
+  },
+
   // ---------- Settings ----------
   settings: {
     get: (key) => ipcRenderer.invoke('settings:get', key),
