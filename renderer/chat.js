@@ -907,9 +907,8 @@
     }
   });
 
-  bus.on('menu:toggle-chat', () => {
-    if (chatPanel) chatPanel.classList.toggle('hidden');
-  });
+  // Chat panel visibility is owned by app.js via the `chat-collapsed`
+  // class on #ide-root — don't duplicate the handler here.
 
   bus.on('chat:send', () => {
     if (document.activeElement === inputEl) sendMessage();

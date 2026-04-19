@@ -273,6 +273,24 @@ module.exports = function register(ipcMain, ctx) {
     } catch (err) { return fail(err); }
   });
 
+  // Unstage files: `git reset HEAD -- <paths>`, or reset everything when no
+  // files are given. Used by the source-control panel to move files from the
+  // Staged Changes group back into Changes.
+  ipcMain.handle('git:unstage', async (_e, payload) => {
+    try {
+      const { projectPath, files } = payload || {};
+      const repo = g(projectPath);
+      const target = Array.isArray(files) ? files : (files ? [files] : []);
+      if (!target.length) {
+        await repo.reset(['HEAD']);
+      } else {
+        await repo.reset(['HEAD', '--', ...target]);
+      }
+      notifyChanged();
+      return ok();
+    } catch (err) { return fail(err); }
+  });
+
   // Show — full info for one commit: message, parent, files changed, full diff
   ipcMain.handle('git:show', async (_e, payload) => {
     try {

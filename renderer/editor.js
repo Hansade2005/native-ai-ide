@@ -328,7 +328,13 @@
         return;
       }
       if (data && data.binary) {
-        bus.emit('toast:show', { type: 'warn', message: 'Cannot open binary file' });
+        // Route binary files to the appropriate viewer (image, pdf, audio,
+        // video, font, or hex). Archives are rejected.
+        if (data.kind === 'archive') {
+          bus.emit('toast:show', { type: 'warn', message: `Archive files (.${data.ext}) can't be viewed in the editor` });
+          return;
+        }
+        await openBinaryTab(filePath, data);
         return;
       }
       const content = (data && data.content) || '';
@@ -352,6 +358,110 @@
     }
 
     switchTo(filePath, opts);
+  }
+
+  // ---------- Binary viewer ----------
+  function fmtBytes(n) {
+    if (n == null) return '';
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1024 / 1024).toFixed(1) + ' MB';
+  }
+
+  async function openBinaryTab(filePath, meta) {
+    if (openDocs.has(filePath)) { switchTo(filePath); return; }
+
+    const res = await api.files.readBinary(filePath);
+    if (!res || res.ok === false) {
+      bus.emit('toast:show', { type: 'warn', message: res?.error || 'Cannot open binary file' });
+      return;
+    }
+
+    const dataUrl = `data:${res.mime};base64,${res.base64}`;
+    const ext = (res.ext || '').toLowerCase();
+    const kind = res.kind || meta?.kind || 'binary';
+
+    openVirtualTab({
+      id: filePath,
+      name: basename(filePath),
+      mount: (container) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'binary-viewer';
+        wrap.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;background:var(--bg);color:var(--text);';
+
+        const header = document.createElement('div');
+        header.style.cssText = 'display:flex;align-items:center;gap:12px;padding:6px 14px;font-size:11px;color:var(--text-mid);border-bottom:1px solid var(--border);background:var(--surface);';
+        header.innerHTML = `<span style="color:var(--text-strong);font-weight:500;">${basename(filePath)}</span><span>${kind.toUpperCase()}</span><span>${res.mime}</span><span>${fmtBytes(res.size)}</span>`;
+        wrap.appendChild(header);
+
+        const body = document.createElement('div');
+        body.style.cssText = 'flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:auto;padding:20px;';
+
+        if (kind === 'image') {
+          const img = document.createElement('img');
+          img.src = dataUrl;
+          img.alt = basename(filePath);
+          img.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;background:repeating-conic-gradient(#1c1c21 0% 25%, #16161a 0% 50%) 50% / 20px 20px;border:1px solid var(--border);';
+          body.appendChild(img);
+        } else if (kind === 'pdf') {
+          const iframe = document.createElement('iframe');
+          iframe.src = dataUrl;
+          iframe.style.cssText = 'width:100%;height:100%;border:none;background:white;';
+          body.style.padding = '0';
+          body.appendChild(iframe);
+        } else if (kind === 'audio') {
+          const audio = document.createElement('audio');
+          audio.src = dataUrl;
+          audio.controls = true;
+          audio.style.cssText = 'width:80%;max-width:500px;';
+          body.appendChild(audio);
+        } else if (kind === 'video') {
+          const video = document.createElement('video');
+          video.src = dataUrl;
+          video.controls = true;
+          video.style.cssText = 'max-width:100%;max-height:100%;background:#000;';
+          body.appendChild(video);
+        } else if (kind === 'font') {
+          body.style.flexDirection = 'column';
+          body.style.alignItems = 'stretch';
+          body.style.padding = '20px 40px';
+          const style = document.createElement('style');
+          const fontFamily = `pipilot-font-${Date.now()}`;
+          style.textContent = `@font-face{font-family:'${fontFamily}';src:url('${dataUrl}');}`;
+          container.appendChild(style);
+          const preview = document.createElement('div');
+          preview.style.cssText = `font-family:'${fontFamily}',sans-serif;color:var(--text-strong);`;
+          preview.innerHTML = `
+            <div style="font-size:42px;line-height:1.2;margin-bottom:18px;">The quick brown fox jumps over the lazy dog.</div>
+            <div style="font-size:28px;margin-bottom:14px;">ABCDEFGHIJKLMNOPQRSTUVWXYZ</div>
+            <div style="font-size:28px;margin-bottom:14px;">abcdefghijklmnopqrstuvwxyz</div>
+            <div style="font-size:28px;margin-bottom:24px;">0123456789 !@#$%^&amp;*()</div>
+            <div style="font-size:20px;line-height:1.55;color:var(--text-mid);">Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam.</div>
+          `;
+          body.appendChild(preview);
+        } else {
+          // Generic hex viewer for unrecognized binaries.
+          const bytes = Uint8Array.from(atob(res.base64), c => c.charCodeAt(0));
+          const pre = document.createElement('pre');
+          pre.style.cssText = 'font-family:var(--font-mono);font-size:12px;color:var(--text);line-height:1.45;margin:0;white-space:pre;overflow:auto;width:100%;max-height:100%;';
+          const rowsLimit = 2048; // cap hex output so massive files don't lag the DOM
+          const lines = [];
+          for (let i = 0; i < bytes.length && lines.length < rowsLimit; i += 16) {
+            const slice = bytes.slice(i, i + 16);
+            const hex = Array.from(slice).map(b => b.toString(16).padStart(2, '0')).join(' ').padEnd(48, ' ');
+            const ascii = Array.from(slice).map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.').join('');
+            lines.push(`${i.toString(16).padStart(8, '0')}  ${hex}  ${ascii}`);
+          }
+          if (bytes.length > rowsLimit * 16) lines.push(`… ${fmtBytes(bytes.length - rowsLimit * 16)} more (truncated)`);
+          pre.textContent = lines.join('\n');
+          body.style.padding = '12px 14px';
+          body.style.alignItems = 'flex-start';
+          body.appendChild(pre);
+        }
+        wrap.appendChild(body);
+        container.appendChild(wrap);
+      },
+    });
   }
 
   function switchTo(filePath, opts = {}) {

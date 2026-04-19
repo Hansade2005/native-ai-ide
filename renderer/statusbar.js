@@ -10,7 +10,10 @@
   function setProblems(count) {
     const el = $('#status-problems');
     if (!el) return;
-    const n = Number(count) || 0;
+    const raw = (count && typeof count === 'object')
+      ? (count.total ?? count.count ?? 0)
+      : count;
+    const n = Number(raw) || 0;
     el.textContent = `⚠ ${n}`;
     el.classList.toggle('ok', n === 0);
     el.classList.toggle('warn', n > 0);
@@ -23,10 +26,26 @@
     el.textContent = `Ln ${line}, Col ${col}`;
   }
 
+  function LANG_LABEL(id) {
+    if (!id) return 'Plain Text';
+    const map = {
+      javascript: 'JavaScript', typescript: 'TypeScript', json: 'JSON',
+      markdown: 'Markdown', html: 'HTML', css: 'CSS', scss: 'SCSS',
+      python: 'Python', go: 'Go', rust: 'Rust', java: 'Java',
+      kotlin: 'Kotlin', swift: 'Swift', c: 'C', cpp: 'C++',
+      csharp: 'C#', php: 'PHP', shell: 'Shell', yaml: 'YAML',
+      ini: 'INI', sql: 'SQL', lua: 'Lua', r: 'R',
+      dockerfile: 'Dockerfile', makefile: 'Makefile', xml: 'XML',
+      plaintext: 'Plain Text',
+    };
+    return map[id] || id.charAt(0).toUpperCase() + id.slice(1);
+  }
+
   function setLanguage(lang) {
     const el = $('#status-language');
     if (!el) return;
-    el.textContent = lang || 'Plain Text';
+    const id = (lang && typeof lang === 'object') ? (lang.language || lang.id || '') : lang;
+    el.textContent = LANG_LABEL(id);
   }
 
   function setAgent(status) {

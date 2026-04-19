@@ -93,12 +93,28 @@
     btns.forEach(btn => {
       btn.addEventListener('click', () => {
         const panel = btn.dataset.panel;
+        // The Chat activity button toggles the right panel instead of
+        // switching the left sidebar — clicking while open closes it.
+        if (panel === 'chat') {
+          if (isChatVisible()) {
+            hideChatPanel();
+            btn.classList.remove('active');
+          } else {
+            revealChatPanel();
+            btn.classList.add('active');
+          }
+          return;
+        }
         btns.forEach(b => b.classList.toggle('active', b === btn));
         bus.emit('panel:switch', panel);
       });
     });
 
     $('#open-settings')?.addEventListener('click', () => bus.emit('modal:settings'));
+    $('#chat-close')?.addEventListener('click', () => {
+      hideChatPanel();
+      $('#activity-bar .activity-btn[data-panel="chat"]')?.classList.remove('active');
+    });
   }
 
   function revealChatPanel() {
@@ -107,6 +123,16 @@
     $('#ide-root')?.classList.remove('chat-collapsed');
     saveLayout();
     window.PiPilot?.chat?.focus?.();
+  }
+
+  function hideChatPanel() {
+    $('#ide-root')?.classList.add('chat-collapsed');
+    saveLayout();
+  }
+
+  function isChatVisible() {
+    const root = $('#ide-root');
+    return !!(root && !root.classList.contains('chat-collapsed'));
   }
 
   function wireProjectSwitcher() {
@@ -318,10 +344,7 @@
 
     bus.on('menu:view:toggle-problems', () => bus.emit('bottom:show', 'problems'));
     bus.on('chat:reveal', revealChatPanel);
-    bus.on('panel:switch', (panel) => {
-      // Special activity-bar buttons that don't just change the sidebar.
-      if (panel === 'chat') revealChatPanel();
-    });
+    bus.on('chat:hide', hideChatPanel);
     bus.on('menu:view:zen', () => {
       const root = $('#ide-root');
       if (!root) return;

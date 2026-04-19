@@ -614,33 +614,37 @@
   }
 
   // ---------- Boot: wait for monaco to be ready ----------
-  function tryRegister() {
-    if (registered) return;
-    if (typeof monaco === 'undefined' || !monaco?.editor) return;
-    registered = true;
-    injectStyles();
-    registerInlineCompletions();
-    registerQuickFix();
+  const wiredEditors = new WeakSet();
+  function wireEditor(ed) {
+    if (!ed || wiredEditors.has(ed)) return;
+    wiredEditors.add(ed);
+    try { registerEditorActions(ed); } catch (e) { console.error('editor actions', e); }
+  }
 
-    // Attach editor-level actions to every existing editor + future ones
-    const editors = new Set();
-    const wireEditor = (ed) => {
-      if (!ed || editors.has(ed)) return;
-      editors.add(ed);
-      try { registerEditorActions(ed); } catch (e) { console.error('editor actions', e); }
-    };
-    monaco.editor.getEditors?.().forEach(wireEditor);
-    monaco.editor.onDidCreateEditor?.(wireEditor);
+  function tryRegister() {
+    if (typeof window.monaco === 'undefined' || !window.monaco.editor) return false;
+    if (!registered) {
+      registered = true;
+      injectStyles();
+      try { registerInlineCompletions(); } catch (e) { console.error('registerInlineCompletions', e); }
+      try { registerQuickFix(); } catch (e) { console.error('registerQuickFix', e); }
+      try { window.monaco.editor.onDidCreateEditor?.(wireEditor); } catch {}
+    }
+    // Always sweep existing editors — handles late-arriving editors that
+    // were created before the onDidCreateEditor hook landed.
+    try { window.monaco.editor.getEditors?.().forEach(wireEditor); } catch {}
+    return true;
   }
 
   bus.on('monaco:ready', tryRegister);
-  // Poll as a fallback in case editor.js emits before we subscribed
+  // Retry on editor lifecycle events — cheap and covers late creation.
+  bus.on('editor:active-changed', () => tryRegister());
+  // Poll as a final fallback in case the bus event is missed entirely.
   const iv = setInterval(() => {
-    if (typeof monaco !== 'undefined' && monaco.editor) {
-      tryRegister();
+    if (tryRegister() && registered && window.monaco?.editor?.getEditors?.().length > 0) {
       clearInterval(iv);
     }
-  }, 300);
+  }, 500);
 
   window.PiPilot.editorAi = {
     addToChat: () => {

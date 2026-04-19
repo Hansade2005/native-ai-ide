@@ -24,6 +24,41 @@ const MAX_DEPTH = 12;
 const BINARY_THRESHOLD_BYTES = 1024 * 1024;
 const SEARCH_MAX_RESULTS = 500;
 const SEARCH_MAX_FILE_BYTES = 512 * 1024;
+const BINARY_VIEWER_MAX_BYTES = 25 * 1024 * 1024; // 25 MB cap for in-editor viewing
+
+const MIME_BY_EXT = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+  webp: 'image/webp', bmp: 'image/bmp', ico: 'image/x-icon', svg: 'image/svg+xml',
+  avif: 'image/avif', tiff: 'image/tiff', tif: 'image/tiff',
+  pdf: 'application/pdf',
+  mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', m4a: 'audio/mp4', flac: 'audio/flac',
+  mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', mkv: 'video/x-matroska',
+  ttf: 'font/ttf', otf: 'font/otf', woff: 'font/woff', woff2: 'font/woff2', eot: 'application/vnd.ms-fontobject',
+};
+
+const ARCHIVE_EXTS = new Set([
+  'zip', 'tar', 'gz', 'tgz', 'tbz', 'tbz2', 'bz2', 'xz', '7z', 'rar',
+  'jar', 'war', 'ear', 'iso', 'dmg', 'pkg', 'deb', 'rpm', 'apk',
+]);
+
+function extOf(p) {
+  const name = path.basename(p).toLowerCase();
+  const i = name.lastIndexOf('.');
+  return i > 0 ? name.slice(i + 1) : '';
+}
+
+function classifyBinary(filePath) {
+  const ext = extOf(filePath);
+  const mime = MIME_BY_EXT[ext] || 'application/octet-stream';
+  let kind = 'binary';
+  if (ARCHIVE_EXTS.has(ext)) kind = 'archive';
+  else if (mime.startsWith('image/')) kind = 'image';
+  else if (mime === 'application/pdf') kind = 'pdf';
+  else if (mime.startsWith('audio/')) kind = 'audio';
+  else if (mime.startsWith('video/')) kind = 'video';
+  else if (mime.startsWith('font/') || ext === 'eot') kind = 'font';
+  return { ext, mime, kind };
+}
 
 function safeAbsolute(p) {
   if (typeof p !== 'string' || !p) throw new Error('Path is required');
@@ -195,18 +230,51 @@ module.exports = function register(ipcMain, ctx) {
   ipcMain.handle('files:read', async (_e, filePath) => {
     const p = safeAbsolute(filePath);
     const stat = await fsp.stat(p);
+    const meta = classifyBinary(p);
     if (stat.size > BINARY_THRESHOLD_BYTES) {
-      return { binary: true, size: stat.size };
+      return { binary: true, size: stat.size, kind: meta.kind, ext: meta.ext, mime: meta.mime };
     }
     const buf = await fsp.readFile(p);
-    if (isLikelyBinary(buf)) {
-      return { binary: true, size: stat.size };
+    if (isLikelyBinary(buf) || meta.kind !== 'binary') {
+      // Image SVG is technically text but editor layer routes it as an image when
+      // the user double-clicks, so we only report "binary" when the sniffer flags
+      // it OR the extension clearly indicates a known media/archive format.
+      const isTextExt = meta.kind === 'binary' && !isLikelyBinary(buf);
+      if (isTextExt) {
+        return { content: buf.toString('utf8'), encoding: 'utf8', size: stat.size, mtime: stat.mtimeMs };
+      }
+      return { binary: true, size: stat.size, kind: meta.kind, ext: meta.ext, mime: meta.mime };
     }
     return {
       content: buf.toString('utf8'),
       encoding: 'utf8',
       size: stat.size,
       mtime: stat.mtimeMs,
+    };
+  });
+
+  // Read a binary file for in-editor viewing (images, PDFs, audio, video, fonts).
+  // Returns base64-encoded bytes + MIME type + classification. Archives and files
+  // larger than BINARY_VIEWER_MAX_BYTES are rejected with a descriptive error.
+  ipcMain.handle('files:read-binary', async (_e, filePath) => {
+    const p = safeAbsolute(filePath);
+    const stat = await fsp.stat(p);
+    const meta = classifyBinary(p);
+    if (meta.kind === 'archive') {
+      return { ok: false, error: 'Archive files cannot be viewed in the editor', kind: 'archive', ext: meta.ext, size: stat.size };
+    }
+    if (stat.size > BINARY_VIEWER_MAX_BYTES) {
+      return { ok: false, error: `File too large to view (${(stat.size / 1024 / 1024).toFixed(1)} MB > 25 MB)`, size: stat.size, kind: meta.kind };
+    }
+    const buf = await fsp.readFile(p);
+    return {
+      ok: true,
+      kind: meta.kind,
+      mime: meta.mime,
+      ext: meta.ext,
+      size: stat.size,
+      mtime: stat.mtimeMs,
+      base64: buf.toString('base64'),
     };
   });
 

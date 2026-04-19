@@ -82,11 +82,41 @@
 .dev-item .status-dot.stopped { background: var(--text-faint); }
 .dev-item .status-dot.error { background: var(--error); }
 
-.commits-list { max-height: 240px; overflow-y: auto; }
-.commit-row { padding: 6px 12px; font-size: 11px; border-bottom: 1px solid var(--border); }
+.commits-list { max-height: 320px; overflow-y: auto; }
+.commit-row { padding: 6px 12px; font-size: 11px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.commit-row:hover { background: var(--surface-alt); }
 .commit-row .hash { color: var(--accent); font-family: var(--font-mono); }
 .commit-row .msg { color: var(--text); }
 .commit-row .meta { color: var(--text-dim); font-size: 10px; }
+
+.git-section { padding: 0; }
+.git-sec-head {
+  display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+  cursor: pointer; user-select: none; border-bottom: 1px solid var(--border);
+  background: var(--surface); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--text-mid); font-weight: 600;
+}
+.git-sec-head:hover { background: var(--surface-alt); }
+.git-chev { color: var(--text-dim); font-size: 10px; display: inline-flex; align-items: center; width: 10px; }
+.git-sec-title { flex: 1; color: var(--text-strong); }
+.git-count {
+  font-size: 10px; padding: 0 6px; background: var(--surface-alt);
+  color: var(--text-mid); border-radius: 10px; font-weight: 500;
+}
+.git-group-actions { display: flex; gap: 2px; }
+.git-group-actions .icon-btn { width: 20px; height: 20px; font-size: 11px; }
+.git-sec-body { padding: 4px 0; }
+.git-section.collapsed .git-sec-body { display: none; }
+.git-empty { padding: 4px 16px; font-size: 11px; color: var(--text-faint); }
+
+.git-row { padding: 3px 10px; font-size: var(--fs-sm); }
+.git-row .name { font-weight: 400; color: var(--text); }
+.git-row .git-dir {
+  color: var(--text-faint); font-size: 10px; padding-left: 6px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px;
+}
+.git-row .row-actions { margin-right: 6px; }
+.git-row .row-actions button { width: 20px; height: 18px; padding: 0; font-size: 11px; line-height: 1; }
 `;
     const s = document.createElement('style');
     s.id = 'panels-inline-styles';
@@ -133,8 +163,61 @@
   }
 
   // ---------------- GIT PANEL ----------------
+  // Maps one Porcelain XY status pair to a single letter (prefer index when
+  // present) and a descriptive title. Mirrors how VS Code's SCM view renders
+  // the M/A/D/R/U badges.
+  function statusLetter(f) {
+    const i = (f.index || '').trim();
+    const w = (f.working_dir || '').trim();
+    if (i === '?' || w === '?') return { letter: 'U', title: 'Untracked' };
+    if (i === 'A') return { letter: 'A', title: 'Added' };
+    if (i === 'D' || w === 'D') return { letter: 'D', title: 'Deleted' };
+    if (i === 'R') return { letter: 'R', title: 'Renamed' };
+    if (i === 'C') return { letter: 'C', title: 'Copied' };
+    if (i === 'M' || w === 'M') return { letter: 'M', title: 'Modified' };
+    if (i === 'U' || w === 'U' || (f.conflicted)) return { letter: '!', title: 'Conflicted' };
+    return { letter: '?', title: 'Changed' };
+  }
+
+  function guessLanguage(filePath) {
+    const ext = (filePath.split('.').pop() || '').toLowerCase();
+    const map = {
+      js: 'javascript', mjs: 'javascript', jsx: 'javascript',
+      ts: 'typescript', tsx: 'typescript',
+      json: 'json', md: 'markdown', html: 'html', css: 'css', scss: 'scss',
+      py: 'python', go: 'go', rs: 'rust', java: 'java', kt: 'kotlin',
+      c: 'c', h: 'c', cpp: 'cpp', cs: 'csharp', php: 'php',
+      sh: 'shell', bash: 'shell', yml: 'yaml', yaml: 'yaml', toml: 'ini',
+    };
+    return map[ext] || 'plaintext';
+  }
+
+  async function openGitDiff(projectPath, file, staged) {
+    try {
+      const res = await api.git.fileVersions(projectPath, file, staged);
+      if (!res || res.ok === false) {
+        bus.emit('toast:show', { message: 'Diff unavailable: ' + (res?.error || 'unknown'), type: 'error' });
+        return;
+      }
+      const id = `pipilot://git-diff/${staged ? 'index' : 'working'}/${file}`;
+      const label = staged ? 'Index ↔ HEAD' : 'Working ↔ HEAD';
+      window.PiPilot.editor?.openDiffTab?.({
+        id,
+        name: file.split('/').pop() + ' (Git)',
+        original: res.original || '',
+        modified: res.modified || '',
+        language: guessLanguage(file),
+        originalTitle: `${file}  (HEAD)`,
+        modifiedTitle: `${file}  (${staged ? 'Index' : 'Working'})`,
+      });
+      bus.emit('toast:show', { message: label, type: 'info' });
+    } catch (e) {
+      bus.emit('toast:show', { message: 'Diff failed: ' + e.message, type: 'error' });
+    }
+  }
+
   async function renderGitPanel(container, projectPath) {
-    container.innerHTML = '<div class="p-section"><h4>Source Control</h4><div style="color:var(--text-dim);font-size:11px;">Loading…</div></div>';
+    container.innerHTML = '<div class="p-section"><div style="color:var(--text-dim);font-size:11px;">Loading source control…</div></div>';
     let statusResp;
     try { statusResp = await api.git.status(projectPath); } catch (e) { statusResp = { ok: false, error: e.message }; }
     if (!statusResp || statusResp.ok === false) {
@@ -148,87 +231,316 @@
     bus.emit('git:branch-changed', status.branch);
 
     container.innerHTML = '';
+
+    // ---------- Header: branch + ahead/behind + sync/refresh ----------
+    const ahead = status.ahead || 0;
+    const behind = status.behind || 0;
+    const syncLabel = (ahead || behind) ? `${behind ? '↓' + behind : ''}${ahead ? ' ↑' + ahead : ''}`.trim() : '';
     const header = el('div', { class: 'panel-header' },
-      el('span', { class: 'panel-title' }, status.branch || '(detached)'),
+      el('span', { class: 'panel-title' },
+        el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px' } },
+          el('span', null, '⎇ ' + (status.branch || '(detached)')),
+          syncLabel ? el('span', { style: { color: 'var(--text-dim)', fontSize: '10px' } }, syncLabel) : null,
+        )
+      ),
       el('div', { class: 'panel-actions' },
         el('button', { class: 'icon-btn', title: 'Refresh', onClick: () => renderGitPanel(container, projectPath) }, '↻'),
-        el('button', { class: 'icon-btn', title: 'Pull', onClick: async () => { await api.git.pull(projectPath); renderGitPanel(container, projectPath); } }, '⬇'),
-        el('button', { class: 'icon-btn', title: 'Push', onClick: async () => { const r = await api.git.push(projectPath); bus.emit('toast:show', { message: r && r.ok === false ? 'Push failed: ' + r.error : 'Pushed', type: r && r.ok === false ? 'error' : 'success' }); } }, '⬆')
+        el('button', { class: 'icon-btn', title: 'Pull (fetch + merge)', onClick: async () => {
+          bus.emit('toast:show', { message: 'Pulling…', type: 'info' });
+          const r = await api.git.pull(projectPath);
+          bus.emit('toast:show', { message: r?.ok === false ? 'Pull failed: ' + r.error : 'Pulled', type: r?.ok === false ? 'error' : 'success' });
+          renderGitPanel(container, projectPath);
+        } }, '⬇'),
+        el('button', { class: 'icon-btn', title: 'Push', onClick: async () => {
+          bus.emit('toast:show', { message: 'Pushing…', type: 'info' });
+          const r = await api.git.push(projectPath);
+          bus.emit('toast:show', { message: r?.ok === false ? 'Push failed: ' + r.error : 'Pushed', type: r?.ok === false ? 'error' : 'success' });
+          renderGitPanel(container, projectPath);
+        } }, '⬆'),
       )
     );
     container.appendChild(header);
 
-    const commitBox = el('div', { class: 'p-commit' },
-      el('textarea', { id: 'git-commit-msg', placeholder: 'Commit message…' }),
-      el('div', { class: 'p-commit-actions' },
-        el('button', { class: 'btn btn-primary btn-small', style: { flex: '1' }, onClick: async () => {
-          const msg = container.querySelector('#git-commit-msg').value.trim();
-          if (!msg) { bus.emit('toast:show', { message: 'Enter a commit message', type: 'warn' }); return; }
+    // ---------- Commit message composer ----------
+    const commitBox = el('div', { class: 'p-commit' });
+    const textarea = el('textarea', { id: 'git-commit-msg', placeholder: 'Commit message (Ctrl+Enter to commit)' });
+    commitBox.appendChild(textarea);
+
+    const commitActions = el('div', { class: 'p-commit-actions' });
+    const commitBtn = el('button', {
+      class: 'btn btn-primary btn-small',
+      style: { flex: '1' },
+      onClick: async () => {
+        const msg = textarea.value.trim();
+        if (!msg) { bus.emit('toast:show', { message: 'Enter a commit message', type: 'warn' }); return; }
+        const stagedCount = (status.files || []).filter(f => f.index && f.index !== ' ' && f.index !== '?').length;
+        if (!stagedCount) {
+          const addAll = await window.PiPilot.modal.confirm({ title: 'Nothing staged', message: 'Stage all changes and commit?', confirmText: 'Stage & Commit' });
+          if (!addAll) return;
           await api.git.add(projectPath, '.');
-          const r = await api.git.commit(projectPath, msg);
-          if (r && r.ok === false) bus.emit('toast:show', { message: 'Commit failed: ' + r.error, type: 'error' });
-          else { bus.emit('toast:show', { message: 'Committed ' + (r.hash || '').slice(0, 7), type: 'success' }); renderGitPanel(container, projectPath); }
-        } }, 'Commit')
-      )
-    );
+        }
+        const r = await api.git.commit(projectPath, msg);
+        if (r?.ok === false) bus.emit('toast:show', { message: 'Commit failed: ' + r.error, type: 'error' });
+        else {
+          bus.emit('toast:show', { message: 'Committed ' + (r.hash || '').slice(0, 7), type: 'success' });
+          textarea.value = '';
+          renderGitPanel(container, projectPath);
+        }
+      },
+    }, 'Commit');
+    const aiBtn = el('button', {
+      class: 'btn btn-secondary btn-small',
+      title: 'Generate commit message with AI',
+      onClick: async () => {
+        aiBtn.disabled = true;
+        aiBtn.textContent = '…';
+        try {
+          const diffResp = await api.git.diff(projectPath, null);
+          const stagedDiff = await api.git.diff(projectPath, null);
+          const diff = stagedDiff?.diff || diffResp?.diff || '';
+          if (!diff.trim()) {
+            bus.emit('toast:show', { message: 'No changes to summarize', type: 'warn' });
+            return;
+          }
+          const r = await api.codestral.commitMessage({ diff });
+          if (r?.ok && r.text) {
+            textarea.value = r.text;
+            textarea.focus();
+          } else {
+            bus.emit('toast:show', { message: 'AI commit message failed: ' + (r?.error || 'unknown'), type: 'error' });
+          }
+        } catch (e) {
+          bus.emit('toast:show', { message: 'AI commit message failed: ' + e.message, type: 'error' });
+        } finally {
+          aiBtn.disabled = false;
+          aiBtn.textContent = '✦ AI';
+        }
+      },
+    }, '✦ AI');
+    commitActions.appendChild(aiBtn);
+    commitActions.appendChild(commitBtn);
+    commitBox.appendChild(commitActions);
     container.appendChild(commitBox);
 
+    textarea.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        commitBtn.click();
+      }
+    });
+
+    // ---------- File sections ----------
     function renderFileSection(title, files, opts = {}) {
-      const sec = el('div', { class: 'p-section' });
-      sec.appendChild(el('h4', null, `${title} (${files.length})`));
+      const sec = el('div', { class: 'p-section git-section' });
+      if (opts.collapseKey) sec.dataset.key = opts.collapseKey;
+
+      const headerRow = el('div', { class: 'git-sec-head' });
+      const chev = el('span', { class: 'git-chev' }, '▾');
+      headerRow.appendChild(chev);
+      headerRow.appendChild(el('span', { class: 'git-sec-title' }, title));
+      headerRow.appendChild(el('span', { class: 'git-count' }, String(files.length)));
+
+      const groupActions = el('div', { class: 'git-group-actions' });
+      if (opts.canStageAll && files.length) {
+        groupActions.appendChild(el('button', { class: 'icon-btn', title: 'Stage All', onClick: async (e) => {
+          e.stopPropagation();
+          await api.git.add(projectPath, files.map(f => f.path));
+          renderGitPanel(container, projectPath);
+        } }, '+'));
+      }
+      if (opts.canUnstageAll && files.length) {
+        groupActions.appendChild(el('button', { class: 'icon-btn', title: 'Unstage All', onClick: async (e) => {
+          e.stopPropagation();
+          await api.git.unstage(projectPath, files.map(f => f.path));
+          renderGitPanel(container, projectPath);
+        } }, '−'));
+      }
+      if (opts.canDiscardAll && files.length) {
+        groupActions.appendChild(el('button', { class: 'icon-btn', title: 'Discard All', onClick: async (e) => {
+          e.stopPropagation();
+          if (await window.PiPilot.modal.confirm({ title: 'Discard all changes?', message: `${files.length} file(s) will lose local changes.`, danger: true })) {
+            for (const f of files) await api.git.discard(projectPath, f.path);
+            renderGitPanel(container, projectPath);
+          }
+        } }, '↺'));
+      }
+      headerRow.appendChild(groupActions);
+      sec.appendChild(headerRow);
+
+      const body = el('div', { class: 'git-sec-body' });
+      if (!files.length) {
+        body.appendChild(el('div', { class: 'git-empty' }, 'None'));
+      }
       files.forEach(f => {
-        const row = el('div', { class: 'p-row', onClick: () => bus.emit('file:open', { path: typeof f === 'string' ? f : (f.path || f) }) });
-        const status = (f.status || (opts.status || '?')).trim() || '?';
-        const safe = status.replace(/[^a-zA-Z?]/g, '');
-        row.appendChild(el('span', { class: 'badge-mini badge-' + (safe || '?') }, status));
-        row.appendChild(el('span', { class: 'name' }, typeof f === 'string' ? f : f.path));
+        const filePath = f.path;
+        const { letter, title: statusTitle } = statusLetter(f);
+        const row = el('div', {
+          class: 'p-row git-row',
+          title: filePath,
+          onClick: () => openGitDiff(projectPath, filePath, !!opts.isStaged),
+        });
+        const letterCls = letter === 'U' || letter === '?' ? 'U' : letter;
+        row.appendChild(el('span', { class: 'name' }, filePath.split('/').pop()));
+        row.appendChild(el('span', { class: 'git-dir' }, filePath.includes('/') ? filePath.slice(0, filePath.lastIndexOf('/')) : ''));
         const actions = el('div', { class: 'row-actions' });
-        if (opts.canStage) {
-          const stageBtn = el('button', { onClick: async (e) => { e.stopPropagation(); await api.git.add(projectPath, [typeof f === 'string' ? f : f.path]); renderGitPanel(container, projectPath); } }, '+');
-          actions.appendChild(stageBtn);
-        }
-        if (opts.canDiscard) {
-          const disBtn = el('button', { onClick: async (e) => {
+
+        actions.appendChild(el('button', {
+          title: 'Open File',
+          onClick: (e) => {
             e.stopPropagation();
-            if (await window.PiPilot.modal.confirm({ title: 'Discard changes?', message: 'Local changes to ' + (typeof f === 'string' ? f : f.path) + ' will be lost.', danger: true })) {
-              await api.git.discard(projectPath, typeof f === 'string' ? f : f.path);
+            bus.emit('file:open', { path: projectPath + '/' + filePath });
+          },
+        }, '↗'));
+
+        if (opts.canDiscard) {
+          actions.appendChild(el('button', {
+            title: 'Discard Changes',
+            onClick: async (e) => {
+              e.stopPropagation();
+              if (await window.PiPilot.modal.confirm({ title: 'Discard changes?', message: 'Local changes to ' + filePath + ' will be lost.', danger: true })) {
+                await api.git.discard(projectPath, filePath);
+                renderGitPanel(container, projectPath);
+              }
+            },
+          }, '↺'));
+        }
+        if (opts.canStage) {
+          actions.appendChild(el('button', {
+            title: 'Stage Changes',
+            onClick: async (e) => {
+              e.stopPropagation();
+              await api.git.add(projectPath, [filePath]);
               renderGitPanel(container, projectPath);
-            }
-          } }, '↺');
-          actions.appendChild(disBtn);
+            },
+          }, '+'));
+        }
+        if (opts.canUnstage) {
+          actions.appendChild(el('button', {
+            title: 'Unstage Changes',
+            onClick: async (e) => {
+              e.stopPropagation();
+              await api.git.unstage(projectPath, [filePath]);
+              renderGitPanel(container, projectPath);
+            },
+          }, '−'));
         }
         row.appendChild(actions);
-        sec.appendChild(row);
+        row.appendChild(el('span', { class: 'badge-mini badge-' + letterCls, title: statusTitle }, letter));
+        body.appendChild(row);
       });
+      sec.appendChild(body);
+
+      headerRow.addEventListener('click', () => {
+        const collapsed = sec.classList.toggle('collapsed');
+        chev.textContent = collapsed ? '▸' : '▾';
+      });
+
       container.appendChild(sec);
     }
 
-    const stagedFiles = (status.files || []).filter(f => f.index && f.index !== ' ' && f.index !== '?');
-    const unstagedFiles = (status.files || []).filter(f => f.working_dir && f.working_dir !== ' ' && f.index !== '?');
-    const untrackedFiles = (status.files || []).filter(f => f.index === '?' || f.working_dir === '?');
+    // Split files into VS Code-style buckets. A file can appear in both
+    // Staged AND Changes when it has edits in the index AND more edits in
+    // the working tree — mirror that behavior to stay truthful.
+    const allFiles = status.files || [];
+    const stagedFiles = allFiles.filter(f => f.index && f.index !== ' ' && f.index !== '?');
+    const unstagedFiles = allFiles.filter(f => f.working_dir && f.working_dir !== ' ' && f.working_dir !== '?' && f.index !== '?');
+    const untrackedFiles = allFiles.filter(f => f.index === '?' || f.working_dir === '?');
+    const conflicted = allFiles.filter(f => f.index === 'U' || f.working_dir === 'U' || (Array.isArray(status.conflicted) && status.conflicted.includes(f.path)));
 
-    renderFileSection('Staged Changes', stagedFiles, { canStage: false });
-    renderFileSection('Changes', unstagedFiles, { canStage: true, canDiscard: true });
-    renderFileSection('Untracked', untrackedFiles, { canStage: true });
+    if (conflicted.length) {
+      renderFileSection('Merge Changes', conflicted, { collapseKey: 'conflict' });
+    }
+    renderFileSection('Staged Changes', stagedFiles, {
+      isStaged: true, canUnstage: true, canUnstageAll: true, collapseKey: 'staged',
+    });
+    renderFileSection('Changes', unstagedFiles, {
+      canStage: true, canDiscard: true, canStageAll: true, canDiscardAll: true, collapseKey: 'changes',
+    });
+    renderFileSection('Untracked', untrackedFiles, {
+      canStage: true, canStageAll: true, collapseKey: 'untracked',
+    });
 
-    // Recent commits
+    // ---------- Recent commits ----------
     try {
       const logResp = await api.git.log(projectPath, { limit: 10 });
       const commits = (logResp && logResp.commits) || [];
       if (commits.length) {
-        const sec = el('div', { class: 'p-section' });
-        sec.appendChild(el('h4', null, 'Recent Commits'));
-        const list = el('div', { class: 'commits-list' });
+        const sec = el('div', { class: 'p-section git-section' });
+        const headerRow = el('div', { class: 'git-sec-head' });
+        const chev = el('span', { class: 'git-chev' }, '▾');
+        headerRow.appendChild(chev);
+        headerRow.appendChild(el('span', { class: 'git-sec-title' }, 'Recent Commits'));
+        headerRow.appendChild(el('span', { class: 'git-count' }, String(commits.length)));
+        sec.appendChild(headerRow);
+
+        const list = el('div', { class: 'commits-list git-sec-body' });
         commits.forEach(c => {
-          const r = el('div', { class: 'commit-row' });
+          const r = el('div', {
+            class: 'commit-row',
+            title: `${c.hash}\n${c.author} <${c.email}>\n${c.date}`,
+            onClick: async () => {
+              const resp = await api.git.show(projectPath, c.hash);
+              if (!resp || resp.ok === false) {
+                bus.emit('toast:show', { message: 'Show failed: ' + (resp?.error || 'unknown'), type: 'error' });
+                return;
+              }
+              window.PiPilot.editor?.openVirtualTab?.({
+                id: 'pipilot://commit/' + c.hash,
+                name: (c.abbreviatedHash || c.hash.slice(0, 7)) + ' ' + (c.message || '').split('\n')[0].slice(0, 40),
+                mount: (container) => {
+                  const div = document.createElement('div');
+                  div.style.cssText = 'display:flex;flex-direction:column;height:100%;overflow:auto;padding:16px 20px;font-family:var(--font-sans);color:var(--text);';
+                  const commit = resp.commit || {};
+                  const meta = document.createElement('div');
+                  meta.style.cssText = 'border:1px solid var(--border);border-radius:6px;padding:12px 14px;background:var(--surface);margin-bottom:14px;';
+                  meta.innerHTML = `
+                    <div style="font-size:13px;font-weight:600;color:var(--text-strong);margin-bottom:6px;">${commit.subject || ''}</div>
+                    <div style="font-size:11px;color:var(--text-mid);margin-bottom:4px;"><span style="color:var(--accent);font-family:var(--font-mono);">${commit.hash || ''}</span></div>
+                    <div style="font-size:11px;color:var(--text-mid);">${commit.author || ''} &lt;${commit.email || ''}&gt; · ${commit.date || ''}</div>
+                    ${commit.body ? `<pre style="white-space:pre-wrap;font-size:12px;color:var(--text);margin-top:8px;font-family:var(--font-sans);">${commit.body}</pre>` : ''}
+                  `;
+                  div.appendChild(meta);
+                  if (resp.stat) {
+                    const stat = document.createElement('pre');
+                    stat.style.cssText = 'font-family:var(--font-mono);font-size:11px;color:var(--text-mid);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:14px;white-space:pre-wrap;';
+                    stat.textContent = resp.stat;
+                    div.appendChild(stat);
+                  }
+                  if (resp.diff) {
+                    const diff = document.createElement('pre');
+                    diff.style.cssText = 'font-family:var(--font-mono);font-size:12px;line-height:1.5;white-space:pre;overflow:auto;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg);';
+                    // minimal diff colorization
+                    const frag = document.createDocumentFragment();
+                    resp.diff.split('\n').forEach(line => {
+                      const span = document.createElement('span');
+                      if (line.startsWith('+') && !line.startsWith('+++')) span.style.color = 'var(--ok)';
+                      else if (line.startsWith('-') && !line.startsWith('---')) span.style.color = 'var(--error)';
+                      else if (line.startsWith('@@')) span.style.color = 'var(--accent)';
+                      else if (line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('--- ') || line.startsWith('+++ ')) span.style.color = 'var(--text-mid)';
+                      span.textContent = line + '\n';
+                      frag.appendChild(span);
+                    });
+                    diff.appendChild(frag);
+                    div.appendChild(diff);
+                  }
+                  container.appendChild(div);
+                },
+              });
+            },
+          });
           r.appendChild(el('div', null,
             el('span', { class: 'hash' }, (c.abbreviatedHash || c.hash || '').slice(0, 7) + ' '),
-            el('span', { class: 'msg' }, c.message || '')
+            el('span', { class: 'msg' }, (c.message || '').split('\n')[0])
           ));
           r.appendChild(el('div', { class: 'meta' }, `${c.author || ''} · ${c.date || ''}`));
           list.appendChild(r);
         });
         sec.appendChild(list);
+
+        headerRow.addEventListener('click', () => {
+          const collapsed = sec.classList.toggle('collapsed');
+          chev.textContent = collapsed ? '▸' : '▾';
+        });
         container.appendChild(sec);
       }
     } catch {}

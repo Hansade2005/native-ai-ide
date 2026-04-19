@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   files: {
     tree: (projectPath) => ipcRenderer.invoke('files:tree', projectPath),
     read: (filePath) => ipcRenderer.invoke('files:read', filePath),
+    readBinary: (filePath) => ipcRenderer.invoke('files:read-binary', filePath),
     write: (filePath, content) => ipcRenderer.invoke('files:write', { filePath, content }),
     mkdir: (dirPath) => ipcRenderer.invoke('files:mkdir', dirPath),
     delete: (targetPath) => ipcRenderer.invoke('files:delete', targetPath),
@@ -129,6 +130,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     init: (p) => ipcRenderer.invoke('git:init', p),
     show: (p, hash) => ipcRenderer.invoke('git:show', { projectPath: p, hash }),
     fileVersions: (p, file, staged) => ipcRenderer.invoke('git:file-versions', { projectPath: p, file, staged }),
+    unstage: (p, files) => ipcRenderer.invoke('git:unstage', { projectPath: p, files }),
   },
 
   // ---------- Cloud connectors ----------
