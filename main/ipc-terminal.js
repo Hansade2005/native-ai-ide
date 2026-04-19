@@ -17,10 +17,11 @@ function detectProfiles() {
   const defaultShell = process.env.SHELL || '';
 
   if (platform === 'win32') {
+    // Windows: cmd is the default; PowerShell variants + Git Bash also offered.
     const candidates = [
+      { id: 'cmd', name: 'Command Prompt', path: process.env.ComSpec || 'cmd.exe', args: [] },
       { id: 'powershell', name: 'PowerShell', path: 'powershell.exe', args: [] },
       { id: 'pwsh', name: 'PowerShell Core', path: 'pwsh.exe', args: [] },
-      { id: 'cmd', name: 'Command Prompt', path: process.env.ComSpec || 'cmd.exe', args: [] },
     ];
     const gitBashCandidates = [
       'C:\\Program Files\\Git\\bin\\bash.exe',
@@ -35,11 +36,15 @@ function detectProfiles() {
         break;
       }
     }
+    // cmd is first candidate → default
     if (profiles.length) profiles[0].default = true;
   } else {
+    // Linux / macOS: offer zsh, sh, fish. bash intentionally excluded from the
+    // surfaced profile list — users who need bash can still launch it from any
+    // other shell as `bash`.
     const candidates = [
       { id: 'zsh', name: 'zsh', path: '/bin/zsh' },
-      { id: 'bash', name: 'bash', path: '/bin/bash' },
+      { id: 'zsh-local', name: 'zsh', path: '/usr/local/bin/zsh' },
       { id: 'sh', name: 'sh', path: '/bin/sh' },
       { id: 'fish', name: 'fish', path: '/usr/bin/fish' },
       { id: 'fish-local', name: 'fish', path: '/usr/local/bin/fish' },
@@ -52,8 +57,10 @@ function detectProfiles() {
     if (!profiles.length) {
       profiles.push({ id: 'sh', name: 'sh', path: '/bin/sh', args: [], env: {} });
     }
+    // Default: honor $SHELL only if it isn't bash (bash is deliberately demoted);
+    // otherwise prefer zsh, then first available.
     let defaultSet = false;
-    if (defaultShell) {
+    if (defaultShell && !/\/bash$/.test(defaultShell)) {
       for (const p of profiles) {
         if (p.path === defaultShell || p.name === path.basename(defaultShell)) {
           p.default = true;
@@ -62,7 +69,10 @@ function detectProfiles() {
         }
       }
     }
-    if (!defaultSet) profiles[0].default = true;
+    if (!defaultSet) {
+      const zsh = profiles.find(p => p.name === 'zsh');
+      (zsh || profiles[0]).default = true;
+    }
   }
 
   return profiles;
