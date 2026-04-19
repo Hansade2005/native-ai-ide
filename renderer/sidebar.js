@@ -511,14 +511,37 @@
 
   // ---------- Panel switching ----------
   function renderPanel() {
+    // Tag the container with the active panel so panels.js refresh handlers
+    // can tell whether they own the current render.
+    root.dataset.panel = activePanel;
+
+    // Delegate to external panel renderers when available (panels.js
+    // populates window.PiPilot.panels for git / extensions / checkpoints /
+    // deploy). Each renderer takes (containerEl, projectPath).
+    const external = window.PiPilot?.panels?.[activePanel];
+    if (external && typeof external === 'function') {
+      root.innerHTML = '';
+      try {
+        external(root, state.projectPath);
+        return;
+      } catch (e) {
+        console.error(`panels.${activePanel} render failed`, e);
+        // fall through to placeholder
+      }
+    }
+
     switch (activePanel) {
       case 'explorer': renderExplorer(); break;
       case 'search': renderSearch(); break;
-      case 'git': renderPlaceholder('Source Control', 'Git integration arrives in Phase 5.'); break;
-      case 'extensions': renderPlaceholder('Extensions & MCP', 'Extension marketplace arrives in Phase 5.'); break;
-      case 'checkpoints': renderPlaceholder('Checkpoints', 'Workspace checkpoints arrive in Phase 5.'); break;
-      case 'deploy': renderPlaceholder('Deploy', 'Deployment tooling arrives in Phase 5.'); break;
-      case 'chat': renderPlaceholder('AI Chat', 'Use the chat panel on the right.'); break;
+      case 'chat':
+        // Don't waste sidebar space — just surface the chat panel on the right.
+        bus.emit('chat:reveal');
+        renderExplorer();
+        break;
+      case 'git': renderPlaceholder('Source Control', 'Open a project to see git status.'); break;
+      case 'extensions': renderPlaceholder('Extensions & MCP', 'Loading…'); break;
+      case 'checkpoints': renderPlaceholder('Checkpoints', 'Loading…'); break;
+      case 'deploy': renderPlaceholder('Deploy', 'Loading…'); break;
       default: renderExplorer();
     }
   }

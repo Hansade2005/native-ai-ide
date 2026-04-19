@@ -98,7 +98,15 @@
       });
     });
 
-    $('#open-settings')?.addEventListener('click', () => bus.emit('settings:open'));
+    $('#open-settings')?.addEventListener('click', () => bus.emit('modal:settings'));
+  }
+
+  function revealChatPanel() {
+    // Make sure the chat panel is visible (not hidden + not collapsed) and focus it.
+    $('#chat-panel')?.classList.remove('hidden');
+    $('#ide-root')?.classList.remove('chat-collapsed');
+    saveLayout();
+    window.PiPilot?.chat?.focus?.();
   }
 
   function wireProjectSwitcher() {
@@ -309,6 +317,11 @@
     });
 
     bus.on('menu:view:toggle-problems', () => bus.emit('bottom:show', 'problems'));
+    bus.on('chat:reveal', revealChatPanel);
+    bus.on('panel:switch', (panel) => {
+      // Special activity-bar buttons that don't just change the sidebar.
+      if (panel === 'chat') revealChatPanel();
+    });
     bus.on('menu:view:zen', () => {
       const root = $('#ide-root');
       if (!root) return;
