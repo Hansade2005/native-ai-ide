@@ -6,6 +6,8 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
+    "postinstall": "electron-rebuild -w node-pty || echo '[pipilot] electron-rebuild skipped (dev env)'",
+    "rebuild": "electron-rebuild -f -w node-pty",
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish"
@@ -21,13 +23,13 @@
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.10",
+    "archiver": "^7.0.1",
     "chokidar": "^3.6.0",
     "dotenv": "^16.4.5",
-    "node-pty": "^1.0.0",
-    "simple-git": "^3.25.0",
-    "archiver": "^7.0.1",
     "extract-zip": "^2.0.1",
     "mime-types": "^2.1.35",
+    "node-pty": "^1.0.0",
+    "simple-git": "^3.25.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
@@ -36,6 +38,7 @@
     "@electron-forge/maker-rpm": "^7.4.0",
     "@electron-forge/maker-squirrel": "^7.4.0",
     "@electron-forge/maker-zip": "^7.4.0",
+    "@electron/rebuild": "^4.0.3",
     "electron": "^32.0.0"
   }
 }
