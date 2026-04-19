@@ -131,6 +131,169 @@
     monaco.editor.addEditorAction && null;
   }
 
+  // ---------- Quick Fix (CodeActionProvider) ----------
+  // Registers commands that the lightbulb triggers and a provider that
+  // lists them whenever a marker intersects the current range.
+  function registerQuickFix() {
+    monaco.editor.registerCommand?.('pipilot.fixMarker', async (_accessor, payload) => {
+      await runMarkerFix(payload);
+    });
+    monaco.editor.registerCommand?.('pipilot.explainMarker', (_accessor, payload) => {
+      runMarkerExplain(payload);
+    });
+
+    monaco.languages.registerCodeActionProvider({ pattern: '**' }, {
+      provideCodeActions(model, range, context /*, token */) {
+        const markers = (context.markers || []).filter(m => m && m.message);
+        if (!markers.length) return { actions: [], dispose() {} };
+
+        const primary = markers[0];
+        const payload = {
+          uri: model.uri.toString(),
+          markers: markers.map(m => ({
+            message: m.message,
+            severity: m.severity,
+            code: typeof m.code === 'object' ? m.code?.value : m.code,
+            source: m.source,
+            startLineNumber: m.startLineNumber,
+            startColumn: m.startColumn,
+            endLineNumber: m.endLineNumber,
+            endColumn: m.endColumn,
+          })),
+          language: model.getLanguageId(),
+          // We capture a generous window around the marker so the fix has context,
+          // but only the exact marker range is replaced when we apply the fix.
+          contextBefore: model.getValueInRange({
+            startLineNumber: Math.max(1, primary.startLineNumber - 8),
+            startColumn: 1,
+            endLineNumber: primary.startLineNumber,
+            endColumn: 1,
+          }),
+          targetText: model.getValueInRange({
+            startLineNumber: primary.startLineNumber,
+            startColumn: 1,
+            endLineNumber: primary.endLineNumber,
+            endColumn: model.getLineMaxColumn(primary.endLineNumber),
+          }),
+          contextAfter: model.getValueInRange({
+            startLineNumber: primary.endLineNumber,
+            startColumn: model.getLineMaxColumn(primary.endLineNumber),
+            endLineNumber: Math.min(model.getLineCount(), primary.endLineNumber + 8),
+            endColumn: model.getLineMaxColumn(Math.min(model.getLineCount(), primary.endLineNumber + 8)),
+          }),
+          targetRange: {
+            startLineNumber: primary.startLineNumber,
+            startColumn: 1,
+            endLineNumber: primary.endLineNumber,
+            endColumn: model.getLineMaxColumn(primary.endLineNumber),
+          },
+        };
+
+        const actions = [
+          {
+            title: '✦ Fix with PiPilot',
+            kind: 'quickfix',
+            isPreferred: true,
+            diagnostics: markers,
+            command: {
+              id: 'pipilot.fixMarker',
+              title: 'Fix with PiPilot',
+              arguments: [payload],
+            },
+          },
+          {
+            title: '✦ Explain problem',
+            kind: 'quickfix',
+            diagnostics: markers,
+            command: {
+              id: 'pipilot.explainMarker',
+              title: 'Explain problem',
+              arguments: [payload],
+            },
+          },
+        ];
+        return { actions, dispose() {} };
+      },
+      providedCodeActionKinds: ['quickfix'],
+    });
+  }
+
+  function formatMarkers(markers) {
+    const sevMap = { 1: 'hint', 2: 'info', 4: 'warning', 8: 'error' };
+    return markers.map(m => {
+      const sev = sevMap[m.severity] || 'problem';
+      const loc = `${m.startLineNumber}:${m.startColumn}`;
+      const src = m.source ? `[${m.source}${m.code ? ' ' + m.code : ''}]` : (m.code ? `[${m.code}]` : '');
+      return `- ${sev} ${loc} ${src}: ${m.message}`.trim();
+    }).join('\n');
+  }
+
+  function runMarkerFix(payload) {
+    // Build a structured prompt and hand it off to the main (Claude Agent) chat.
+    // The agent can read the file via its tools, propose a fix, and apply it
+    // with the user's confirmation — same flow as any other chat request.
+    const fileRef = (() => {
+      try {
+        const uri = new URL(payload.uri);
+        const p = decodeURIComponent(uri.pathname || '');
+        if (state.projectPath && p.startsWith(state.projectPath + '/')) {
+          return '@' + p.slice(state.projectPath.length + 1);
+        }
+        return '@' + p;
+      } catch { return ''; }
+    })();
+
+    const primary = payload.markers[0];
+    const loc = primary ? `line ${primary.startLineNumber}:${primary.startColumn}` : '';
+
+    const prompt = [
+      `Fix the following ${payload.language || 'code'} problem in ${fileRef} at ${loc}.`,
+      '',
+      'Problem(s):',
+      formatMarkers(payload.markers),
+      '',
+      'Code with surrounding context (the target block to repair is between the markers):',
+      '```' + (payload.language || ''),
+      payload.contextBefore,
+      '/* >>> target >>> */',
+      payload.targetText,
+      '/* <<< target <<< */',
+      payload.contextAfter,
+      '```',
+      '',
+      'Please propose and apply the fix.',
+    ].join('\n');
+
+    document.getElementById('chat-panel')?.classList.remove('hidden');
+    bus.emit('chat:focus-with-prompt', prompt);
+    window.PiPilot.chat?.sendMessage?.(prompt);
+    bus.emit('toast:show', { message: 'Sent to chat for fix', type: 'info' });
+  }
+
+  function runMarkerExplain(payload) {
+    const prompt = [
+      `Explain this ${payload.language || 'code'} problem clearly:`,
+      '',
+      'Problem(s):',
+      formatMarkers(payload.markers),
+      '',
+      'Target code:',
+      '```' + (payload.language || '') + '\n' + payload.targetText + '\n```',
+    ].join('\n');
+    document.getElementById('chat-panel')?.classList.remove('hidden');
+    bus.emit('chat:focus-with-prompt', prompt);
+    window.PiPilot.chat?.sendMessage?.(prompt);
+  }
+
+  function findEditorForUri(uriStr) {
+    if (!monaco?.editor?.getEditors) return null;
+    for (const ed of monaco.editor.getEditors()) {
+      const m = ed.getModel();
+      if (m && m.uri?.toString() === uriStr) return ed;
+    }
+    return null;
+  }
+
   // ---------- Context menu actions ----------
   function registerEditorActions(editor) {
     // Open Inline Chat — Ctrl+Shift+I (Ctrl+I is reserved for the side chat)
@@ -191,6 +354,19 @@
       run: () => {
         enabled = !enabled;
         bus.emit('toast:show', { message: `Inline completions ${enabled ? 'enabled' : 'disabled'}`, type: 'info' });
+      },
+    });
+
+    // Quick Fix keyboard shortcut — opens Monaco's native lightbulb menu
+    // which will list the PiPilot CodeActionProvider entries.
+    editor.addAction({
+      id: 'pipilot.quickFix',
+      label: '✦ PiPilot: Quick Fix',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period],
+      contextMenuGroupId: 'pipilot',
+      contextMenuOrder: 0,
+      run: (ed) => {
+        ed.getAction('editor.action.quickFix')?.run();
       },
     });
 
@@ -444,6 +620,7 @@
     registered = true;
     injectStyles();
     registerInlineCompletions();
+    registerQuickFix();
 
     // Attach editor-level actions to every existing editor + future ones
     const editors = new Set();
