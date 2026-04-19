@@ -204,16 +204,25 @@
   gap: var(--space-3);
 }
 
-/* Resizers */
+/* Resizers — 4px visible, wider hit area via ::before */
 .resizer {
   background: transparent;
   position: relative;
   z-index: 5;
-  transition: background var(--t-fast);
+  transition: background 0.15s ease 0.05s;
+}
+.resizer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
 }
 .resizer-v {
   cursor: col-resize;
   width: 4px;
+}
+.resizer-v::before {
+  top: 0; bottom: 0;
+  left: -3px; right: -3px;
 }
 .resizer-v#resizer-side { grid-area: resizer1; }
 .resizer-v#resizer-chat { grid-area: resizer2; }
@@ -223,10 +232,17 @@
   height: 4px;
   width: 100%;
 }
+.resizer-h::before {
+  left: 0; right: 0;
+  top: -3px; bottom: -3px;
+}
 
-.resizer:hover,
-.resizer.dragging {
-  background: var(--accent);
+.resizer:hover { background: var(--border-hover); }
+.resizer.dragging { background: var(--accent); transition: background var(--t-fast); }
+
+/* Panel depth — subtle inner shadow on scroll edges */
+.side-panel-inner, .chat-messages, .bottom-pane {
+  scroll-behavior: smooth;
 }
 
 /* Welcome screen */

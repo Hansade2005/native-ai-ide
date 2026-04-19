@@ -165,7 +165,27 @@ module.exports = function register(ipcMain, ctx) {
         if (!msg || typeof msg !== 'object') continue;
 
         if (msg.type === 'system') {
-          send(event, ch, { type: 'system', subtype: msg.subtype || null, data: msg });
+          if (msg.subtype === 'init') {
+            send(event, ch, {
+              type: 'system',
+              subtype: 'init',
+              model: msg.model,
+              cwd: msg.cwd,
+              tools: msg.tools || [],
+              mcp_servers: msg.mcp_servers || [],
+              permission_mode: msg.permissionMode,
+              slash_commands: msg.slash_commands || [],
+              session_id: msg.session_id,
+            });
+          } else if (msg.subtype === 'compact_boundary') {
+            send(event, ch, { type: 'compact_boundary', trigger: msg.compact_metadata?.trigger, preTokens: msg.compact_metadata?.pre_tokens });
+          } else if (msg.subtype === 'status') {
+            send(event, ch, { type: 'status', status: msg.status });
+          } else if (msg.subtype === 'hook_response') {
+            send(event, ch, { type: 'hook', hook: msg.hook_name, event: msg.hook_event, exitCode: msg.exit_code });
+          } else {
+            send(event, ch, { type: 'system', subtype: msg.subtype || null });
+          }
           continue;
         }
 
@@ -179,61 +199,96 @@ module.exports = function register(ipcMain, ctx) {
             } else if (block.type === 'thinking' && typeof block.thinking === 'string') {
               assistantEntry.blocks.push({ type: 'thinking', text: block.thinking });
               send(event, ch, { type: 'thinking', text: block.thinking });
-            } else if (block.type === 'tool_use') {
-              assistantEntry.blocks.push({
+            } else if (block.type === 'redacted_thinking') {
+              send(event, ch, { type: 'thinking', text: '[redacted]', redacted: true });
+            } else if (block.type === 'tool_use' || block.type === 'mcp_tool_use' || block.type === 'server_tool_use') {
+              const call = {
                 type: 'tool_call',
                 id: block.id,
                 name: block.name,
                 input: block.input,
-              });
-              send(event, ch, {
-                type: 'tool_call',
-                id: block.id,
-                name: block.name,
-                input: block.input,
-              });
+                kind: block.type,
+                serverName: block.server_name || null,
+                parentToolUseId: msg.parent_tool_use_id || null,
+              };
+              assistantEntry.blocks.push(call);
+              send(event, ch, call);
             }
           }
           continue;
         }
 
         if (msg.type === 'user') {
-          const content = msg.message?.content || [];
+          const content = Array.isArray(msg.message?.content) ? msg.message.content : [];
           for (const block of content) {
             if (!block || typeof block !== 'object') continue;
-            if (block.type === 'tool_result') {
+            if (block.type === 'tool_result' || block.type === 'mcp_tool_result' || block.type === 'web_search_tool_result' || block.type === 'code_execution_tool_result' || block.type === 'bash_code_execution_tool_result' || block.type === 'text_editor_code_execution_tool_result') {
               let preview = block.content;
               if (Array.isArray(preview)) {
                 preview = preview.map(p => (p && p.type === 'text') ? p.text : JSON.stringify(p)).join('\n');
+              } else if (preview && typeof preview === 'object') {
+                preview = JSON.stringify(preview);
               }
-              assistantEntry.blocks.push({
+              const resultBlock = {
                 type: 'tool_result',
                 toolUseId: block.tool_use_id,
-                content: preview,
+                content: typeof preview === 'string' ? preview : String(preview ?? ''),
                 isError: !!block.is_error,
-              });
-              send(event, ch, {
-                type: 'tool_result',
-                toolUseId: block.tool_use_id,
-                content: preview,
-                isError: !!block.is_error,
-              });
+                kind: block.type,
+              };
+              assistantEntry.blocks.push(resultBlock);
+              send(event, ch, resultBlock);
             }
           }
           continue;
         }
 
         if (msg.type === 'stream_event') {
-          send(event, ch, { type: 'system', subtype: 'stream_event', data: msg });
+          const evt = msg.event;
+          if (!evt) continue;
+          if (evt.type === 'content_block_delta' && evt.delta) {
+            if (evt.delta.type === 'text_delta') {
+              send(event, ch, { type: 'text_delta', text: evt.delta.text || '', index: evt.index });
+            } else if (evt.delta.type === 'thinking_delta') {
+              send(event, ch, { type: 'thinking_delta', text: evt.delta.thinking || '', index: evt.index });
+            } else if (evt.delta.type === 'input_json_delta') {
+              send(event, ch, { type: 'input_delta', partial: evt.delta.partial_json || '', index: evt.index });
+            }
+          } else if (evt.type === 'content_block_start') {
+            send(event, ch, { type: 'block_start', block: evt.content_block, index: evt.index });
+          } else if (evt.type === 'content_block_stop') {
+            send(event, ch, { type: 'block_stop', index: evt.index });
+          } else if (evt.type === 'message_stop') {
+            send(event, ch, { type: 'message_stop' });
+          }
+          continue;
+        }
+
+        if (msg.type === 'tool_progress') {
+          send(event, ch, { type: 'tool_progress', toolUseId: msg.tool_use_id, toolName: msg.tool_name, elapsedSeconds: msg.elapsed_time_seconds });
+          continue;
+        }
+
+        if (msg.type === 'auth_status') {
+          send(event, ch, { type: 'auth_status', isAuthenticating: msg.isAuthenticating, output: msg.output, error: msg.error });
           continue;
         }
 
         if (msg.type === 'result') {
           resultSummary = {
             subtype: msg.subtype || 'success',
+            total_cost_usd: msg.total_cost_usd || 0,
             totalCostUsd: msg.total_cost_usd || 0,
+            duration_ms: msg.duration_ms || 0,
             durationMs: msg.duration_ms || 0,
+            duration_api_ms: msg.duration_api_ms || 0,
+            num_turns: msg.num_turns || 0,
+            is_error: !!msg.is_error,
             usage: msg.usage || null,
+            modelUsage: msg.modelUsage || null,
+            permission_denials: msg.permission_denials || [],
+            result: msg.result || null,
+            errors: msg.errors || null,
           };
           send(event, ch, { type: 'result', ...resultSummary });
           continue;
