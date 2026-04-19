@@ -23,6 +23,10 @@
 .ide-root.side-collapsed.chat-collapsed {
   grid-template-columns: var(--activity-w) 0 0 1fr 0 0;
 }
+.ide-root.statusbar-hidden {
+  grid-template-rows: var(--titlebar-h) 1fr 0;
+}
+.ide-root.statusbar-hidden #statusbar { display: none; }
 
 #titlebar {
   grid-area: titlebar;

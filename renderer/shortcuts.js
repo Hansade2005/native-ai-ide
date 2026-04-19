@@ -97,6 +97,8 @@
   register('mod+shift+g', () => bus.emit('panel:switch', 'git'));
   register('mod+shift+e', () => bus.emit('panel:switch', 'explorer'));
   register('mod+shift+x', () => bus.emit('panel:switch', 'extensions'));
+  register('mod+shift+m', () => bus.emit('bottom:show', 'problems'));
+  register('mod+j', () => bus.emit('menu:toggle-terminal'));
   register('esc', () => bus.emit('shortcut:escape'));
 
   bus.on('shortcuts:help', () => {

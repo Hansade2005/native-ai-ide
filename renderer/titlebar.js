@@ -28,6 +28,8 @@
       { label: 'Toggle Sidebar', shortcut: 'Ctrl+B', event: 'menu:view:toggle-sidebar' },
       { label: 'Toggle Terminal', shortcut: 'Ctrl+`', event: 'menu:view:toggle-terminal' },
       { label: 'Toggle Chat', shortcut: 'Ctrl+I', event: 'menu:view:toggle-chat' },
+      { label: 'Toggle Problems', shortcut: 'Ctrl+Shift+M', event: 'menu:view:toggle-problems' },
+      { label: 'Toggle Status Bar', event: 'menu:view:toggle-statusbar' },
       { label: 'Command Palette', shortcut: 'Ctrl+Shift+P', disabled: true },
       { separator: true },
       { label: 'Zen Mode', event: 'menu:view:zen' },

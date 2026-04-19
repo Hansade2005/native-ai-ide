@@ -20,6 +20,8 @@
       sideCollapsed: root.classList.contains('side-collapsed'),
       chatCollapsed: root.classList.contains('chat-collapsed'),
       bottomCollapsed: $('#main-area')?.classList.contains('bottom-collapsed') || false,
+      statusbarHidden: root.classList.contains('statusbar-hidden'),
+      bottomRows: $('#main-area')?.style.gridTemplateRows || '',
     };
     try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch {}
   }
@@ -42,6 +44,11 @@
       if (layout.sideCollapsed) root.classList.add('side-collapsed');
       if (layout.chatCollapsed) root.classList.add('chat-collapsed');
       if (layout.bottomCollapsed) $('#main-area')?.classList.add('bottom-collapsed');
+      if (layout.statusbarHidden) root.classList.add('statusbar-hidden');
+      if (layout.bottomRows) {
+        const main = $('#main-area');
+        if (main) main.style.gridTemplateRows = layout.bottomRows;
+      }
     } catch {}
   }
 
@@ -136,13 +143,32 @@
   function toggleTerminal() {
     const main = $('#main-area');
     if (!main) return;
-    if (main.classList.contains('bottom-collapsed')) {
+    const isCollapsed = main.classList.contains('bottom-collapsed');
+    const termTab = $('.bottom-tab[data-bottom="terminal"]');
+    const termActive = termTab?.classList.contains('active');
+    const focusedInTerm = document.activeElement?.closest('#terminal-pane');
+
+    if (isCollapsed) {
+      // Closed → open on Terminal tab and focus it
       main.classList.remove('bottom-collapsed');
-      const termTab = $('.bottom-tab[data-bottom="terminal"]');
       termTab?.click();
+      bus.emit('terminal:focus');
+    } else if (!termActive) {
+      // Open but on another tab → switch to Terminal and focus
+      termTab?.click();
+      bus.emit('terminal:focus');
+    } else if (!focusedInTerm) {
+      // Terminal tab active but focus elsewhere → focus terminal
+      bus.emit('terminal:focus');
     } else {
+      // Terminal open & focused → close
       main.classList.add('bottom-collapsed');
     }
+    saveLayout();
+  }
+
+  function toggleStatusbar() {
+    $('#ide-root')?.classList.toggle('statusbar-hidden');
     saveLayout();
   }
 
@@ -260,6 +286,38 @@
     bus.on('menu:view:toggle-sidebar', toggleSidebar);
     bus.on('menu:view:toggle-terminal', toggleTerminal);
     bus.on('menu:view:toggle-chat', toggleChat);
+    bus.on('menu:view:toggle-statusbar', toggleStatusbar);
+
+    // Mirror shortcut-style events (emitted by shortcuts.js + other modules)
+    bus.on('menu:toggle-sidebar', toggleSidebar);
+    bus.on('menu:toggle-terminal', toggleTerminal);
+    bus.on('menu:toggle-chat', toggleChat);
+    bus.on('menu:toggle-statusbar', toggleStatusbar);
+
+    // Bottom-panel helpers — jump directly to a specific tab
+    bus.on('bottom:show', (key) => {
+      const main = $('#main-area');
+      if (!main) return;
+      main.classList.remove('bottom-collapsed');
+      const tab = $(`.bottom-tab[data-bottom="${key}"]`);
+      tab?.click();
+      saveLayout();
+    });
+    bus.on('bottom:hide', () => {
+      $('#main-area')?.classList.add('bottom-collapsed');
+      saveLayout();
+    });
+
+    bus.on('menu:view:toggle-problems', () => bus.emit('bottom:show', 'problems'));
+    bus.on('menu:view:zen', () => {
+      const root = $('#ide-root');
+      if (!root) return;
+      const isZen = root.classList.toggle('side-collapsed');
+      root.classList.toggle('chat-collapsed', isZen);
+      root.classList.toggle('statusbar-hidden', isZen);
+      $('#main-area')?.classList.toggle('bottom-collapsed', isZen);
+      saveLayout();
+    });
 
     bus.on('menu:file:open-folder', async () => {
       try {
