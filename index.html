@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https: http://localhost:* http://127.0.0.1:*; img-src 'self' data: blob: https:; font-src 'self' data: https:;" />
+  <title>PiPilot IDE</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="styles/tokens.css" />
+  <link rel="stylesheet" href="styles/layout.css" />
+  <link rel="stylesheet" href="styles/components.css" />
+  <link rel="stylesheet" href="styles/editor.css" />
+</head>
+<body>
+  <!-- Welcome screen (shown when no project is open) -->
+  <div id="welcome-screen" class="welcome hidden">
+    <div class="welcome-inner">
+      <div class="welcome-logo">
+        <svg width="72" height="72" viewBox="0 0 72 72" fill="none">
+          <rect x="8" y="8" width="56" height="56" rx="14" fill="var(--accent)"/>
+          <path d="M24 44 L36 24 L48 44 Z" fill="#16161a"/>
+        </svg>
+      </div>
+      <h1 class="welcome-title">PiPilot IDE</h1>
+      <p class="welcome-tagline">Native AI-powered development environment</p>
+
+      <div class="welcome-actions">
+        <button class="btn btn-primary" id="welcome-open-folder">
+          <span class="icon">📁</span> Open Folder
+        </button>
+        <button class="btn btn-secondary" id="welcome-clone-repo">
+          <span class="icon">⎘</span> Clone Repo
+        </button>
+        <button class="btn btn-secondary" id="welcome-ai-generate">
+          <span class="icon">✦</span> Generate with AI
+        </button>
+      </div>
+
+      <div class="welcome-section">
+        <h3>Recent Projects</h3>
+        <ul id="recent-projects-list" class="recent-list">
+          <li class="recent-empty">No recent projects</li>
+        </ul>
+      </div>
+
+      <div class="welcome-tutorials">
+        <div class="tutorial-card" data-tutorial="get-started">
+          <div class="tutorial-icon">🚀</div>
+          <div class="tutorial-body">
+            <h4>Get Started</h4>
+            <p>Open a folder or clone a repo to begin</p>
+          </div>
+        </div>
+        <div class="tutorial-card" data-tutorial="ai-power">
+          <div class="tutorial-icon">✦</div>
+          <div class="tutorial-body">
+            <h4>AI Power User</h4>
+            <p>Learn keyboard shortcuts and agent tricks</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main IDE layout (shown when a project is open) -->
+  <div id="ide-root" class="ide-root hidden">
+    <!-- Title bar -->
+    <header id="titlebar" class="titlebar">
+      <div class="titlebar-left">
+        <div class="titlebar-logo">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <rect x="2" y="2" width="20" height="20" rx="5" fill="var(--accent)"/>
+            <path d="M8 16 L12 8 L16 16 Z" fill="#16161a"/>
+          </svg>
+        </div>
+        <button class="project-switcher" id="project-switcher">
+          <span id="project-name">PiPilot</span>
+          <span class="chevron">▾</span>
+        </button>
+      </div>
+      <nav class="titlebar-menu" id="titlebar-menu">
+        <button class="menu-item" data-menu="file">File</button>
+        <button class="menu-item" data-menu="edit">Edit</button>
+        <button class="menu-item" data-menu="view">View</button>
+        <button class="menu-item" data-menu="go">Go</button>
+        <button class="menu-item" data-menu="run">Run</button>
+        <button class="menu-item" data-menu="help">Help</button>
+      </nav>
+      <div class="titlebar-right">
+        <span id="titlebar-status" class="titlebar-status"></span>
+      </div>
+    </header>
+
+    <!-- Activity bar -->
+    <aside id="activity-bar" class="activity-bar">
+      <button class="activity-btn active" data-panel="explorer" title="Explorer">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5z"/></svg>
+      </button>
+      <button class="activity-btn" data-panel="search" title="Search">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      </button>
+      <button class="activity-btn" data-panel="git" title="Source Control">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 9v6a6 6 0 0 0 6 6"/></svg>
+      </button>
+      <button class="activity-btn" data-panel="extensions" title="Extensions & MCP">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      </button>
+      <button class="activity-btn" data-panel="checkpoints" title="Checkpoints">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+      </button>
+      <button class="activity-btn" data-panel="deploy" title="Deploy">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 19V9l7-6 7 6v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><path d="M12 3v18"/></svg>
+      </button>
+      <button class="activity-btn" data-panel="chat" title="AI Chat">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12a9 9 0 1 1-4.7-7.9L21 3v7h-7"/></svg>
+      </button>
+      <div class="activity-spacer"></div>
+      <button class="activity-btn" id="open-settings" title="Settings">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c0 .66.39 1.25 1 1.51H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </aside>
+
+    <!-- Side panel (file explorer / search / git / etc) -->
+    <section id="side-panel" class="side-panel">
+      <div class="side-panel-inner" id="side-panel-inner">
+        <!-- Populated by renderer/sidebar.js based on active panel -->
+      </div>
+    </section>
+
+    <!-- Resize divider between side panel and editor -->
+    <div class="resizer resizer-v" id="resizer-side"></div>
+
+    <!-- Main editor area -->
+    <main id="main-area" class="main-area">
+      <div class="tab-bar" id="tab-bar"></div>
+      <div class="breadcrumb" id="breadcrumb"></div>
+      <div id="editor-container" class="editor-container">
+        <div id="editor-empty" class="editor-empty">
+          <div class="editor-empty-inner">
+            <div class="editor-empty-logo">
+              <svg width="56" height="56" viewBox="0 0 24 24" fill="none">
+                <rect x="2" y="2" width="20" height="20" rx="5" fill="var(--accent)"/>
+                <path d="M8 16 L12 8 L16 16 Z" fill="#16161a"/>
+              </svg>
+            </div>
+            <p class="editor-empty-hint">No file open — select one from the Explorer</p>
+            <div class="editor-empty-shortcuts">
+              <div><kbd>Ctrl</kbd>+<kbd>P</kbd> Quick open</div>
+              <div><kbd>Ctrl</kbd>+<kbd>I</kbd> AI chat</div>
+              <div><kbd>Ctrl</kbd>+<kbd>`</kbd> Terminal</div>
+            </div>
+          </div>
+        </div>
+        <div id="monaco-host" class="monaco-host"></div>
+      </div>
+
+      <!-- Bottom panel (terminal / problems / preview / deploy) -->
+      <div class="resizer resizer-h" id="resizer-bottom"></div>
+      <div id="bottom-panel" class="bottom-panel">
+        <div class="bottom-tabs">
+          <button class="bottom-tab active" data-bottom="terminal">Terminal</button>
+          <button class="bottom-tab" data-bottom="problems">Problems</button>
+          <button class="bottom-tab" data-bottom="preview">Preview</button>
+          <button class="bottom-tab" data-bottom="deploy">Deploy</button>
+          <div class="bottom-tabs-spacer"></div>
+          <button class="icon-btn" id="terminal-new" title="New Terminal">+</button>
+          <button class="icon-btn" id="bottom-close" title="Close Panel">×</button>
+        </div>
+        <div class="bottom-content">
+          <div id="terminal-pane" class="bottom-pane active"></div>
+          <div id="problems-pane" class="bottom-pane"><div class="empty-state">No problems detected</div></div>
+          <div id="preview-pane" class="bottom-pane"><div class="empty-state">No preview running</div></div>
+          <div id="deploy-pane" class="bottom-pane"><div class="empty-state">No deployments yet</div></div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Resize divider between editor and chat -->
+    <div class="resizer resizer-v" id="resizer-chat"></div>
+
+    <!-- Chat panel (right side) -->
+    <aside id="chat-panel" class="chat-panel">
+      <div class="chat-header">
+        <div class="chat-header-left">
+          <select id="chat-session-select" class="chat-session-select">
+            <option>New Session</option>
+          </select>
+          <span class="badge badge-accent" id="chat-mode-badge">Agent</span>
+        </div>
+        <div class="chat-header-right">
+          <button class="icon-btn" id="chat-new" title="New Conversation">+</button>
+          <button class="icon-btn" id="chat-settings" title="Chat Settings">⚙</button>
+        </div>
+      </div>
+      <div class="chat-messages" id="chat-messages">
+        <div class="chat-welcome">
+          <div class="chat-welcome-logo">✦</div>
+          <h3>How can I help?</h3>
+          <p>Ask me to build a feature, fix a bug, or explain code.</p>
+        </div>
+      </div>
+      <div class="chat-compose">
+        <div class="chat-attachments" id="chat-attachments"></div>
+        <textarea id="chat-input" class="chat-input" placeholder="Ask PiPilot… (Shift+Enter for newline)" rows="1"></textarea>
+        <div class="chat-compose-bar">
+          <button class="icon-btn" id="chat-attach" title="Attach File">📎</button>
+          <button class="icon-btn" id="chat-upload" title="Upload">⬆</button>
+          <select id="chat-mode-select" class="chat-mode-select">
+            <option value="agent">Agent</option>
+            <option value="plan">Plan</option>
+          </select>
+          <div class="spacer"></div>
+          <button class="btn btn-primary btn-small" id="chat-send">Send</button>
+          <button class="btn btn-secondary btn-small hidden" id="chat-stop">Stop</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Status bar -->
+    <footer id="statusbar" class="statusbar">
+      <div class="status-left">
+        <span class="status-item" id="status-branch">⎇ main</span>
+        <span class="status-item" id="status-problems">⚠ 0</span>
+        <span class="status-item" id="status-position">Ln 1, Col 1</span>
+      </div>
+      <div class="status-right">
+        <span class="status-item" id="status-encoding">UTF-8</span>
+        <span class="status-item" id="status-language">Plain Text</span>
+        <span class="status-item" id="status-agent">● Ready</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Modal root -->
+  <div id="modal-root"></div>
+
+  <!-- Context menu root -->
+  <div id="context-menu-root"></div>
+
+  <!-- Toast root -->
+  <div id="toast-root" class="toast-root"></div>
+
+  <!-- Menu dropdown root -->
+  <div id="menu-dropdown-root"></div>
+
+  <!-- Scripts -->
+  <script src="renderer/ipc.js"></script>
+  <script src="renderer/toast.js"></script>
+  <script src="renderer/contextmenu.js"></script>
+  <script src="renderer/modals.js"></script>
+  <script src="renderer/titlebar.js"></script>
+  <script src="renderer/statusbar.js"></script>
+  <script src="renderer/sidebar.js"></script>
+  <script src="renderer/editor.js"></script>
+  <script src="renderer/terminal.js"></script>
+  <script src="renderer/chat.js"></script>
+  <script src="renderer/welcome.js"></script>
+  <script src="renderer/shortcuts.js"></script>
+  <script src="renderer/app.js"></script>
+</body>
+</html>

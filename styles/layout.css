@@ -1,0 +1,307 @@
+/* PiPilot IDE — Layout */
+
+.ide-root {
+  display: grid;
+  width: 100vw;
+  height: 100vh;
+  grid-template-columns: var(--activity-w) var(--side-panel-w) 4px 1fr 4px var(--chat-panel-w);
+  grid-template-rows: var(--titlebar-h) 1fr var(--statusbar-h);
+  grid-template-areas:
+    "titlebar titlebar titlebar titlebar titlebar titlebar"
+    "activity sidepanel resizer1 main resizer2 chat"
+    "statusbar statusbar statusbar statusbar statusbar statusbar";
+  background: var(--bg);
+  transition: grid-template-columns var(--t);
+}
+
+.ide-root.side-collapsed {
+  grid-template-columns: var(--activity-w) 0 0 1fr 4px var(--chat-panel-w);
+}
+.ide-root.chat-collapsed {
+  grid-template-columns: var(--activity-w) var(--side-panel-w) 4px 1fr 0 0;
+}
+.ide-root.side-collapsed.chat-collapsed {
+  grid-template-columns: var(--activity-w) 0 0 1fr 0 0;
+}
+
+#titlebar {
+  grid-area: titlebar;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+#titlebar button,
+#titlebar .titlebar-menu,
+#titlebar .titlebar-right {
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.titlebar-menu {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+}
+
+.titlebar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+#activity-bar {
+  grid-area: activity;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-2) 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  gap: 2px;
+  overflow: hidden;
+}
+
+.activity-spacer { flex: 1; }
+
+#side-panel {
+  grid-area: sidepanel;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.side-panel-inner {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+#main-area {
+  grid-area: main;
+  display: grid;
+  grid-template-rows: auto auto 1fr 4px auto;
+  background: var(--bg);
+  min-width: 0;
+  overflow: hidden;
+}
+#main-area.bottom-collapsed {
+  grid-template-rows: auto auto 1fr 0 0;
+}
+
+.tab-bar {
+  display: flex;
+  align-items: center;
+  min-height: var(--tab-h);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-shrink: 0;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  height: var(--breadcrumb-h);
+  padding: 0 var(--space-3);
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.editor-container {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg);
+  min-height: 0;
+}
+
+.monaco-host {
+  position: absolute;
+  inset: 0;
+}
+
+.bottom-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.bottom-tabs {
+  display: flex;
+  align-items: center;
+  height: var(--tab-h);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 var(--space-2);
+  gap: 2px;
+  flex-shrink: 0;
+}
+.bottom-tabs-spacer { flex: 1; }
+
+.bottom-content {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.bottom-pane {
+  position: absolute;
+  inset: 0;
+  display: none;
+  overflow: auto;
+}
+.bottom-pane.active {
+  display: block;
+}
+
+#chat-panel {
+  grid-area: chat;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+  min-width: 0;
+}
+
+#statusbar {
+  grid-area: statusbar;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-3);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  color: var(--text-mid);
+}
+.status-left, .status-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Resizers */
+.resizer {
+  background: transparent;
+  position: relative;
+  z-index: 5;
+  transition: background var(--t-fast);
+}
+.resizer-v {
+  cursor: col-resize;
+  width: 4px;
+}
+.resizer-v#resizer-side { grid-area: resizer1; }
+.resizer-v#resizer-chat { grid-area: resizer2; }
+
+.resizer-h {
+  cursor: row-resize;
+  height: 4px;
+  width: 100%;
+}
+
+.resizer:hover,
+.resizer.dragging {
+  background: var(--accent);
+}
+
+/* Welcome screen */
+.welcome {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  overflow: auto;
+  z-index: 10;
+}
+
+.welcome-inner {
+  width: 100%;
+  max-width: 640px;
+  padding: var(--space-8) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.welcome-logo {
+  margin-bottom: var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.welcome-title {
+  font-size: var(--fs-3xl);
+  font-weight: 700;
+  color: var(--text-strong);
+  letter-spacing: -0.02em;
+  margin-bottom: var(--space-2);
+}
+
+.welcome-tagline {
+  font-size: var(--fs-md);
+  color: var(--text-mid);
+  margin-bottom: var(--space-6);
+}
+
+.welcome-actions {
+  display: flex;
+  gap: var(--space-3);
+  margin-bottom: var(--space-8);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.welcome-section {
+  width: 100%;
+  text-align: left;
+  margin-bottom: var(--space-6);
+}
+
+.welcome-section h3 {
+  font-size: var(--fs-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  font-weight: 600;
+  margin-bottom: var(--space-3);
+}
+
+.welcome-tutorials {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+@media (max-width: 560px) {
+  .welcome-tutorials { grid-template-columns: 1fr; }
+}
