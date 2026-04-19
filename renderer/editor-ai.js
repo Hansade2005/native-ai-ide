@@ -295,9 +295,17 @@
   }
 
   // ---------- Context menu actions ----------
+  function addAction(editor, descriptor) {
+    // Each call is isolated because Monaco's diff-editor children use a
+    // restricted keybinding service and throw "Cannot add keybinding because
+    // the editor is configured with an unrecognized KeybindingService" — we
+    // don't want one failing action to cancel the rest.
+    try { editor.addAction(descriptor); } catch (e) { /* ignore */ }
+  }
+
   function registerEditorActions(editor) {
     // Open Inline Chat — Ctrl+Shift+I (Ctrl+I is reserved for the side chat)
-    editor.addAction({
+    addAction(editor, {
       id: 'pipilot.inlineChat',
       label: '✦ PiPilot: Open Inline Chat',
       keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyI],
@@ -307,7 +315,7 @@
     });
 
     // Add to Chat — sends current selection (or file) to side chat as @-mention
-    editor.addAction({
+    addAction(editor, {
       id: 'pipilot.addToChat',
       label: '✦ PiPilot: Add to Chat',
       keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyL],
@@ -316,28 +324,28 @@
       run: (ed) => addToChat(ed),
     });
 
-    editor.addAction({
+    addAction(editor, {
       id: 'pipilot.explain',
       label: '✦ PiPilot: Explain Selection',
       contextMenuGroupId: 'pipilot',
       contextMenuOrder: 3,
       run: (ed) => runQuickAction(ed, 'explain'),
     });
-    editor.addAction({
+    addAction(editor, {
       id: 'pipilot.fix',
       label: '✦ PiPilot: Fix Selection',
       contextMenuGroupId: 'pipilot',
       contextMenuOrder: 4,
       run: (ed) => runQuickAction(ed, 'fix'),
     });
-    editor.addAction({
+    addAction(editor, {
       id: 'pipilot.refactor',
       label: '✦ PiPilot: Refactor Selection',
       contextMenuGroupId: 'pipilot',
       contextMenuOrder: 5,
       run: (ed) => runQuickAction(ed, 'refactor'),
     });
-    editor.addAction({
+    addAction(editor, {
       id: 'pipilot.addDocs',
       label: '✦ PiPilot: Add Comments / Docs',
       contextMenuGroupId: 'pipilot',
@@ -346,7 +354,7 @@
     });
 
     // Toggle ghost suggestions
-    editor.addAction({
+    addAction(editor, {
       id: 'pipilot.toggleGhost',
       label: '✦ PiPilot: Toggle Inline Completions',
       contextMenuGroupId: 'pipilot',
@@ -359,7 +367,7 @@
 
     // Quick Fix keyboard shortcut — opens Monaco's native lightbulb menu
     // which will list the PiPilot CodeActionProvider entries.
-    editor.addAction({
+    addAction(editor, {
       id: 'pipilot.quickFix',
       label: '✦ PiPilot: Quick Fix',
       keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period],
@@ -371,7 +379,7 @@
     });
 
     // Hidden command target for future analytics
-    monaco.editor.registerCommand?.('pipilot.trackCompletionShown', () => {});
+    try { monaco.editor.registerCommand?.('pipilot.trackCompletionShown', () => {}); } catch {}
   }
 
   // ---------- Actions ----------
@@ -615,8 +623,27 @@
 
   // ---------- Boot: wait for monaco to be ready ----------
   const wiredEditors = new WeakSet();
+
+  // Skip editors that are inside a diff editor. Diff-editor children use a
+  // different keybinding service (BareCodeEditorService) that rejects any
+  // addAction() call carrying keybindings — we surface our AI actions only
+  // on the top-level standalone code editors.
+  function isStandaloneCodeEditor(ed) {
+    try {
+      if (!ed || typeof ed.addAction !== 'function') return false;
+      if (ed.getEditorType && ed.getEditorType() !== 'vs.editor.ICodeEditor') return false;
+      const dom = ed.getDomNode && ed.getDomNode();
+      if (dom && dom.closest && dom.closest('.monaco-diff-editor')) return false;
+      return true;
+    } catch { return false; }
+  }
+
   function wireEditor(ed) {
     if (!ed || wiredEditors.has(ed)) return;
+    // Don't mark as wired when we skip — the DOM check may flip once the
+    // parent attaches, and the next sweep/poll will retry. The per-action
+    // try/catch in `addAction` is the real safety net against diff children.
+    if (!isStandaloneCodeEditor(ed)) return;
     wiredEditors.add(ed);
     try { registerEditorActions(ed); } catch (e) { console.error('editor actions', e); }
   }

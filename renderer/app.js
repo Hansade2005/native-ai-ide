@@ -159,7 +159,7 @@
     $('#bottom-close')?.addEventListener('click', () => {
       const main = $('#main-area');
       if (!main) return;
-      main.classList.toggle('bottom-collapsed');
+      setBottomCollapsed(main, !main.classList.contains('bottom-collapsed'));
       saveLayout();
     });
 
@@ -174,6 +174,22 @@
     $('#ide-root')?.classList.toggle('chat-collapsed');
     saveLayout();
   }
+  function setBottomCollapsed(main, collapsed) {
+    if (collapsed) {
+      main.classList.add('bottom-collapsed');
+      if (main.style.gridTemplateRows) {
+        main.dataset.prevRows = main.style.gridTemplateRows;
+        main.style.gridTemplateRows = '';
+      }
+    } else {
+      main.classList.remove('bottom-collapsed');
+      if (main.dataset.prevRows) {
+        main.style.gridTemplateRows = main.dataset.prevRows;
+        delete main.dataset.prevRows;
+      }
+    }
+  }
+
   function toggleTerminal() {
     const main = $('#main-area');
     if (!main) return;
@@ -184,7 +200,7 @@
 
     if (isCollapsed) {
       // Closed → open on Terminal tab and focus it
-      main.classList.remove('bottom-collapsed');
+      setBottomCollapsed(main, false);
       termTab?.click();
       bus.emit('terminal:focus');
     } else if (!termActive) {
@@ -196,7 +212,7 @@
       bus.emit('terminal:focus');
     } else {
       // Terminal open & focused → close
-      main.classList.add('bottom-collapsed');
+      setBottomCollapsed(main, true);
     }
     saveLayout();
   }

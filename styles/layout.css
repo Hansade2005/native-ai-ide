@@ -104,8 +104,9 @@
   overflow: hidden;
 }
 #main-area.bottom-collapsed {
-  grid-template-rows: auto auto 1fr 0 0;
+  grid-template-rows: auto auto 1fr 0 0 !important;
 }
+#main-area.bottom-collapsed .bottom-panel { display: none; }
 
 .tab-bar {
   display: flex;

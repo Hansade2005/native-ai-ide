@@ -200,7 +200,7 @@
         return;
       }
       const id = `pipilot://git-diff/${staged ? 'index' : 'working'}/${file}`;
-      const label = staged ? 'Index ↔ HEAD' : 'Working ↔ HEAD';
+      const side = staged ? 'Index' : 'Working';
       window.PiPilot.editor?.openDiffTab?.({
         id,
         name: file.split('/').pop() + ' (Git)',
@@ -208,9 +208,8 @@
         modified: res.modified || '',
         language: guessLanguage(file),
         originalTitle: `${file}  (HEAD)`,
-        modifiedTitle: `${file}  (${staged ? 'Index' : 'Working'})`,
+        modifiedTitle: `${file}  (${side})`,
       });
-      bus.emit('toast:show', { message: label, type: 'info' });
     } catch (e) {
       bus.emit('toast:show', { message: 'Diff failed: ' + e.message, type: 'error' });
     }
